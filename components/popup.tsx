@@ -37,6 +37,10 @@ const Popup: React.FC<PopupProps> = ({
   const shortenedText = (text: string, limit: number) =>
     text.length > limit ? text.slice(0, limit) + '...' : text;
 
+  // Limit the number of tags displayed initially
+  const initialTags = item.Tags?.split(', ').slice(0, 5) || [];
+  const allTags = item.Tags?.split(', ') || [];
+
   return (
     <Modal
       visible={visible}
@@ -75,15 +79,16 @@ const Popup: React.FC<PopupProps> = ({
             <TouchableOpacity onPress={() => setShowTags(!showTags)}>
               <Text style={styles.sectionTitle}>Tags</Text>
             </TouchableOpacity>
-            {showTags && (
-              <View style={styles.tagsContainer}>
-                {item.Tags?.split(', ').map((tag: string, index: number) => (
-                  <Text key={index} style={styles.tag}>
-                    #{tag}
-                  </Text>
-                ))}
-              </View>
-            )}
+            <View style={styles.tagsContainer}>
+              {(showTags ? allTags : initialTags).map((tag: string, index: number) => (
+                <Text key={index} style={styles.tag}>
+                  #{tag}
+                </Text>
+              ))}
+              {!showTags && allTags.length > 5 && (
+                <Text style={styles.tag}>...</Text>
+              )}
+            </View>
           </View>
 
           <View style={styles.section}>

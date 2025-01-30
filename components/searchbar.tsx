@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -17,11 +17,24 @@ interface SearchBarProps {
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({
-  placeholder = "Search what's in your Mind... ",
+  placeholder = "Search your Mind... ",
   onSearch,
   value,
 }) => {
   const [menuVisible, setMenuVisible] = useState(false);
+  const [typedValue, setTypedValue] = useState(value);
+  const inputRef = useRef<TextInput>(null);
+
+  const clearSearch = () => {
+    setTypedValue('');
+    onSearch('');
+    inputRef.current?.blur(); // Remove focus after clearing
+  };
+
+  const handleOutsidePress = () => {
+    inputRef.current?.blur(); // Remove focus from input
+    setMenuVisible(false);
+  };
 
   return (
     <LinearGradient
@@ -30,26 +43,39 @@ const SearchBar: React.FC<SearchBarProps> = ({
       end={{ x: 1, y: 0 }}
       style={styles.container}
     >
-      <View style={styles.row}>
-        <TouchableOpacity onPress={() => setMenuVisible(true)}>
-          <Image
-            source={require('../assets/hamburger.png')}
-            style={styles.icon}
+      <TouchableOpacity 
+        style={styles.overlay} 
+        activeOpacity={1} 
+        onPress={handleOutsidePress}
+      >
+        <View style={styles.row}>
+          <TouchableOpacity onPress={() => setMenuVisible(true)}>
+            <Image
+              source={require('../assets/hamburger.png')}
+              style={styles.icon}
+            />
+          </TouchableOpacity>
+
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            placeholder={placeholder}
+            placeholderTextColor="#ffffff"
+            onChangeText={(text) => {
+              setTypedValue(text);
+              onSearch(text);
+            }}
+            value={typedValue}
           />
-        </TouchableOpacity>
 
-        <TextInput
-          style={styles.input}
-          placeholder={placeholder}
-          placeholderTextColor="#ffffff"
-          onChangeText={onSearch}
-          value={value}
-        />
-
-        <TouchableOpacity onPress={() => { /* Handle plus */ }}>
-          <Image source={require('../assets/plus.png')} style={styles.icon} />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity onPress={typedValue ? clearSearch : undefined}>
+            <Image 
+              source={typedValue ? require('../assets/close.png') : require('../assets/plus.png')} 
+              style={styles.icon} 
+            />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
 
       <Modal visible={menuVisible} transparent animationType="fade">
         <TouchableOpacity
@@ -110,6 +136,9 @@ const styles = StyleSheet.create({
   menuText: {
     padding: 10,
     fontSize: 16,
+  },
+  overlay: {
+    width: '100%',
   },
 });
 
