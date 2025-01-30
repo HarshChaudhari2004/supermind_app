@@ -13,6 +13,9 @@ const Cards: React.FC<CardsProps> = ({ searchTerm }) => {
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
+  // To track image load status for each card
+  const [imageLoadStatus, setImageLoadStatus] = useState<{ [key: string]: boolean }>({});
+
   useEffect(() => {
     fetch('https://supermind-9fii.onrender.com/api/video-data/')
       .then((response) => {
@@ -52,16 +55,36 @@ const Cards: React.FC<CardsProps> = ({ searchTerm }) => {
     return 4 / 3;
   };
 
+  // Handle image load status for each card
+  const handleImageLoad = (id: string) => {
+    setImageLoadStatus((prev) => ({
+      ...prev,
+      [id]: true,
+    }));
+  };
+
+  const handleImageError = (id: string) => {
+    setImageLoadStatus((prev) => ({
+      ...prev,
+      [id]: false,
+    }));
+  };
+
   const renderItem = ({ item }: { item: any }) => {
     const ratio = getAspectRatio(item['Thumbnail URL'] || '');
+
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={() => setSelectedItem(item)}
       >
         <Image
-          source={{ uri: item['Thumbnail URL'] || 'assets/image-placeholder.png' }}
+          source={{
+            uri: item['Thumbnail URL'] || 'assets/image-placeholder.png', // Fallback URL
+          }}
           style={[styles.thumbnail, { aspectRatio: ratio }]}
+          onError={() => handleImageError(item.ID)}
+          onLoad={() => handleImageLoad(item.ID)}
         />
         <Text numberOfLines={1} ellipsizeMode="tail" style={styles.title}>
           {item.Title}

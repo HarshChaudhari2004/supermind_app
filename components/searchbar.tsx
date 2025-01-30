@@ -45,11 +45,11 @@ const SearchBar: React.FC<SearchBarProps> = ({
           onChangeText={onSearch}
           value={value}
         />
-      </View>
 
-      <TouchableOpacity onPress={() => { /* Handle plus */ }}>
-        <Image source={require('../assets/plus.png')} style={styles.icon} />
-      </TouchableOpacity>
+        <TouchableOpacity onPress={() => { /* Handle plus */ }}>
+          <Image source={require('../assets/plus.png')} style={styles.icon} />
+        </TouchableOpacity>
+      </View>
 
       <Modal visible={menuVisible} transparent animationType="fade">
         <TouchableOpacity
@@ -80,6 +80,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    width: '100%',
   },
   input: {
     fontSize: 20,

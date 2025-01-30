@@ -1,4 +1,3 @@
-// popup.tsx
 import React, { useState } from 'react';
 import {
   Modal,
@@ -29,8 +28,14 @@ const Popup: React.FC<PopupProps> = ({
   onShare,
 }) => {
   const [note, setNote] = useState('');
+  const [showFullSummary, setShowFullSummary] = useState(false);
+  const [showTags, setShowTags] = useState(false);
 
   if (!item) return null;
+
+  // Helper to display partial text
+  const shortenedText = (text: string, limit: number) =>
+    text.length > limit ? text.slice(0, limit) + '...' : text;
 
   return (
     <Modal
@@ -39,39 +44,48 @@ const Popup: React.FC<PopupProps> = ({
       transparent={false}
       onRequestClose={onClose}>
       <View style={styles.container}>
-        {/* Header */}
         <TouchableOpacity style={styles.closeButton} onPress={onClose}>
           <Text style={styles.closeText}>×</Text>
         </TouchableOpacity>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* WebView */}
-          <WebView
-            source={{ uri: item['Original URL'] }}
-            style={styles.webview}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-          />
-
-          {/* Summary */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Summary</Text>
-            <Text style={styles.summaryText}>{item.Summary}</Text>
+          <View style={{ height: 500 }}>
+            <WebView
+              source={{ uri: item['Original URL'] }}
+              nestedScrollEnabled
+              style={styles.webview}
+              javaScriptEnabled
+              domStorageEnabled
+              scrollEnabled
+            />
           </View>
 
-          {/* Tags */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Tags</Text>
-            <View style={styles.tagsContainer}>
-              {item.Tags?.split(', ').map((tag: string, index: number) => (
-                <Text key={index} style={styles.tag}>
-                  #{tag}
-                </Text>
-              ))}
-            </View>
+            <TouchableOpacity onPress={() => setShowFullSummary(!showFullSummary)}>
+              <Text style={styles.sectionTitle}>Summary</Text>
+            </TouchableOpacity>
+            <Text style={styles.summaryText}>
+              {showFullSummary
+                ? item.Summary
+                : shortenedText(item.Summary || '', 60)}
+            </Text>
           </View>
 
-          {/* Notes */}
+          <View style={styles.section}>
+            <TouchableOpacity onPress={() => setShowTags(!showTags)}>
+              <Text style={styles.sectionTitle}>Tags</Text>
+            </TouchableOpacity>
+            {showTags && (
+              <View style={styles.tagsContainer}>
+                {item.Tags?.split(', ').map((tag: string, index: number) => (
+                  <Text key={index} style={styles.tag}>
+                    #{tag}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </View>
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notes</Text>
             <TextInput
@@ -84,7 +98,6 @@ const Popup: React.FC<PopupProps> = ({
           </View>
         </ScrollView>
 
-        {/* Action Buttons */}
         <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
             <Text style={styles.buttonText}>Delete</Text>
@@ -112,9 +125,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   webview: {
-    height: 200,
     borderRadius: 8,
-    overflow: 'hidden',
   },
   section: {
     marginTop: 20,
