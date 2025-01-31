@@ -17,7 +17,7 @@ const Cards: React.FC<CardsProps> = ({ searchTerm }) => {
   const [imageLoadStatus, setImageLoadStatus] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
-    fetch('https://supermind-9fii.onrender.com/api/video-data/')
+    fetch('https://supermind-production.up.railway.app/api/video-data/')
       .then((response) => {
         if (!response.ok) throw new Error('Failed to fetch data');
         return response.json();
@@ -139,12 +139,13 @@ const styles = StyleSheet.create({
     margin: 7,
     borderRadius: 10,
     overflow: 'hidden',
-    elevation: 3,
+    // elevation: 3,
   },
   thumbnail: {
     width: '100%',
     height: undefined,
     aspectRatio: 1,
+    borderRadius: 10,
     resizeMode: 'contain',
   },
   title: {

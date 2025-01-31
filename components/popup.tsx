@@ -65,28 +65,37 @@ const Popup: React.FC<PopupProps> = ({
           </View>
 
           <View style={styles.section}>
-            <TouchableOpacity onPress={() => setShowFullSummary(!showFullSummary)}>
-              <Text style={styles.sectionTitle}>Summary</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>Summary:</Text>
             <Text style={styles.summaryText}>
               {showFullSummary
                 ? item.Summary
-                : shortenedText(item.Summary || '', 60)}
+                : shortenedText(item.Summary || '', 142)}
             </Text>
+            {item.Summary?.length > 142 && (
+              <TouchableOpacity
+                onPress={() => setShowFullSummary(!showFullSummary)}
+                style={styles.readMoreButton}>
+                <Text style={styles.readMoreText}>
+                  {showFullSummary ? 'Show Less' : 'Read More'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.section}>
-            <TouchableOpacity onPress={() => setShowTags(!showTags)}>
-              <Text style={styles.sectionTitle}>Tags</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>Tags:</Text>
             <View style={styles.tagsContainer}>
               {(showTags ? allTags : initialTags).map((tag: string, index: number) => (
-                <Text key={index} style={styles.tag}>
-                  #{tag}
-                </Text>
+                <TouchableOpacity key={index}>
+                  <Text style={styles.tag}>#{tag}</Text>
+                </TouchableOpacity>
               ))}
-              {!showTags && allTags.length > 5 && (
-                <Text style={styles.tag}>...</Text>
+              {allTags.length > 5 && (
+                <TouchableOpacity onPress={() => setShowTags(!showTags)}>
+                  <Text style={[styles.tag, styles.moreTag]}>
+                    {showTags ? 'Hide tags' : `+${allTags.length - 5} more`}
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
           </View>
@@ -145,6 +154,7 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 14,
     lineHeight: 20,
+    textAlign: 'justify',
   },
   tagsContainer: {
     flexDirection: 'row',
@@ -152,7 +162,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tag: {
-    color: '#4a9afa',
+    color: '#bc10e3',
     backgroundColor: '#2a2a2a',
     borderRadius: 12,
     paddingVertical: 4,
@@ -165,6 +175,7 @@ const styles = StyleSheet.create({
     padding: 12,
     minHeight: 100,
     textAlignVertical: 'top',
+    textAlign: 'justify',
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -215,6 +226,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     lineHeight: 28,
+  },
+  readMoreButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  readMoreText: {
+    color: '#4a9afa',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  moreTag: {
+    backgroundColor: '#3a3a3a',
   },
 });
 
