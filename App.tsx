@@ -1,18 +1,22 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, useColorScheme, BackHandler } from 'react-native';
+import { View, useColorScheme, BackHandler, Alert } from 'react-native';
 import SearchBar from './components/searchbar';
 import Cards from './components/cards';
 import SplashScreen from './components/splashscreen';
+import ShareMenu from 'react-native-share-menu';
+import { sendUrlToBackend } from './services/api';
 
 const App = () => {
   const colorScheme = useColorScheme();
   const backgroundColor = colorScheme === 'dark' ? '#171717' : '#fff';
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [sharedUrl, setSharedUrl] = useState<string | null>(null);
 
   // Splash screen timer
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000);
+    const timer = setTimeout(() => setIsLoading(false), 2000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -35,14 +39,39 @@ const App = () => {
     []
   );
 
+  const refreshCards = useCallback(() => {
+    setReloadKey((prev) => prev + 1);
+  }, []);
+
+  useEffect(() => {
+    // Listen for shared data
+    ShareMenu.getInitialShare(shareData => {
+      if (!shareData) return;
+      
+      const url = Array.isArray(shareData.data) ? shareData.data[0] : shareData.data;
+      if (url) {
+        setSharedUrl(url);
+        // Process URL in background
+        sendUrlToBackend(url)
+          .then(() => {
+            Alert.alert('Success', 'URL processed successfully');
+          })
+          .catch(error => {
+            Alert.alert('Error', 'Failed to process URL');
+            console.error(error);
+          });
+      }
+    });
+  }, []);
+
   if (isLoading) {
     return <SplashScreen />;
   }
 
   return (
     <View style={{ flex: 1, backgroundColor }}>
-      <SearchBar value={searchTerm} onSearch={handleSearch} />
-      <Cards searchTerm={searchTerm} />
+      <SearchBar value={searchTerm} onSearch={handleSearch} /* onAddCard={refreshCards} */ />
+      <Cards key={reloadKey} searchTerm={searchTerm} />
     </View>
   );
 };

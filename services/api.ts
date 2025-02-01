@@ -1,52 +1,59 @@
 // src/services/api.ts
 
-const BASE_URL = 'https://supermind-9fii.onrender.com';
+const BASE_URL = 'https://supermind-production.up.railway.app';
 
-// Function to check if the URL is from YouTube
+// Helper functions to check URL type
 function isYouTubeUrl(url: string): boolean {
   return url.includes("youtube.com") || url.includes("youtu.be");
 }
 
-// Function to check if the URL is from Instagram
 function isInstagramUrl(url: string): boolean {
   return url.includes("instagram.com");
 }
 
 // Function to send the URL to the appropriate backend based on platform
 export const sendUrlToBackend = async (url: string) => {
-  let endpoint = '';
-  
-  // Determine endpoint based on URL
+  let backendUrl = '';
+
+  // Determine backend URL based on URL type
   if (isYouTubeUrl(url)) {
-    endpoint = '/api/generate-summary/';
+    backendUrl = "/api/generate-summary/";
   } else if (isInstagramUrl(url)) {
-    endpoint = '/instagram/api/analyze-instagram/';
+    backendUrl = "/instagram/api/analyze-instagram/";
   } else {
-    endpoint = '/web/api/analyze-website/';
+    backendUrl = "/web/api/analyze-website/";
   }
 
-  console.log('Preparing to send URL:', url);
-  console.log('Sending to endpoint:', endpoint);
-
+  // Try to process the URL and send it to the backend
   try {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      method: 'POST', // Use POST method
+    console.log("Sending URL to backend:", BASE_URL + backendUrl, "with URL:", url); // Log the URL and endpoint
+
+    // Send a GET request with URL as a query parameter
+    const response = await fetch(`${BASE_URL}${backendUrl}?url=${encodeURIComponent(url)}`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json', // Send JSON
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url }), // Send the URL in the body as JSON
     });
 
-    console.log('Response status:', response.status);
-
     if (!response.ok) {
-      throw new Error('Failed to generate summary');
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      console.warn("Non-JSON response. Parsing as text.");
+      const text = await response.text();
+      console.log("Backend text response:", text);
+      return text;
     }
 
     const data = await response.json();
+    console.log("Backend response:", data); // Log the successful response
     return data;
   } catch (error) {
-    console.error('Error sending URL to backend:', error);
+    console.error("Error sending URL to backend:", error); // Log error details
     throw error;
   }
 };
