@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import MasonryList from '@react-native-seoul/masonry-list';
 import Popup from './popup';
@@ -16,23 +16,33 @@ const Cards: React.FC<CardsProps> = ({ searchTerm }) => {
   // To track image load status for each card
   const [imageLoadStatus, setImageLoadStatus] = useState<{ [key: string]: boolean }>({});
 
-  useEffect(() => {
-    fetch('https://supermind-production.up.railway.app/api/video-data/')
-      .then((response) => {
-        if (!response.ok) throw new Error('Failed to fetch data');
-        return response.json();
-      })
-      .then((data) => {
-        const sortedData = data.sort((a: any, b: any) => {
-          const dateA = new Date(a['Date Added']).getTime();
-          const dateB = new Date(b['Date Added']).getTime();
-          return dateA - dateB;
-        });
-        setCardsData(sortedData);
-        setFilteredData(sortedData);
-      })
-      .catch((err) => setError(err.message));
+  const fetchData = useCallback(async () => {
+    try {
+      const response = await fetch('https://supermind-production.up.railway.app/api/video-data/');
+      if (!response.ok) throw new Error('Failed to fetch data');
+      const data = await response.json();
+      const sortedData = data.sort((a: any, b: any) => {
+        const dateB = new Date(b['Date Added']).getTime();
+        const dateA = new Date(a['Date Added']).getTime();
+        return dateB - dateA; // Reverse sort to show newest first
+      });
+      setCardsData(sortedData);
+      setFilteredData(sortedData);
+    } catch (err) {
+      setError(err.message);
+    }
   }, []);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Poll for updates every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   useEffect(() => {
     if (!searchTerm.trim()) {

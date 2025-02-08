@@ -1,5 +1,9 @@
+import 'react-native-url-polyfill/auto';
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, useColorScheme, BackHandler, Alert } from 'react-native';
+import { View, useColorScheme, BackHandler, Alert, Text } from 'react-native';
+import { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
+import Auth from './components/auth';
 import SearchBar from './components/searchbar';
 import Cards from './components/cards';
 import SplashScreen from './components/splashscreen';
@@ -9,10 +13,21 @@ import { sendUrlToBackend } from './services/api';
 const App = () => {
   const colorScheme = useColorScheme();
   const backgroundColor = colorScheme === 'dark' ? '#171717' : '#fff';
+  const [session, setSession] = useState<Session | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+  }, []);
 
   // Splash screen timer
   useEffect(() => {
@@ -51,10 +66,10 @@ const App = () => {
       const url = Array.isArray(shareData.data) ? shareData.data[0] : shareData.data;
       if (url) {
         setSharedUrl(url);
-        // Process URL in background
         sendUrlToBackend(url)
           .then(() => {
             Alert.alert('Success', 'URL processed successfully');
+            setReloadKey(prev => prev + 1); // Trigger cards refresh
           })
           .catch(error => {
             Alert.alert('Error', 'Failed to process URL');
@@ -70,8 +85,15 @@ const App = () => {
 
   return (
     <View style={{ flex: 1, backgroundColor }}>
-      <SearchBar value={searchTerm} onSearch={handleSearch} /* onAddCard={refreshCards} */ />
-      <Cards key={reloadKey} searchTerm={searchTerm} />
+      {!session ? (
+        <Auth />
+      ) : (
+        <>
+          <SearchBar value={searchTerm} onSearch={handleSearch} />
+          <Cards key={reloadKey} searchTerm={searchTerm} />
+          <Text>{session.user.id}</Text>
+        </>
+      )}
     </View>
   );
 };

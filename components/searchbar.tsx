@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import Hamburger from './hamburger';
 
 // Helper functions
 function isYouTubeUrl(url: string) {
@@ -85,18 +86,20 @@ interface SearchBarProps {
   placeholder?: string;
   onSearch: (text: string) => void;
   value: string;
+  onAddCard?: () => void; // Add this prop
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({
   placeholder = "Search your Mind... ",
   onSearch,
   value,
+  onAddCard, // Add this prop
 }) => {
-  const [menuVisible, setMenuVisible] = useState(false);
   const [typedValue, setTypedValue] = useState(value);
   const [plusMenuVisible, setPlusMenuVisible] = useState(false);
   const [addCardVisible, setAddCardVisible] = useState(false);
   const [newUrl, setNewUrl] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const clearSearch = () => {
@@ -107,7 +110,21 @@ const SearchBar: React.FC<SearchBarProps> = ({
 
   const handleOutsidePress = () => {
     inputRef.current?.blur(); // Remove focus from input
-    setMenuVisible(false);
+  };
+
+  const handleSendUrl = async (url: string) => {
+    setIsProcessing(true);
+    try {
+      await sendUrlToBackend(url);
+      setAddCardVisible(false);
+      setNewUrl('');
+      Alert.alert("Success", "URL processed and added successfully!");
+      onAddCard?.(); // Call the refresh function
+    } catch (error) {
+      Alert.alert("Error", `Failed to process URL: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -124,12 +141,8 @@ const SearchBar: React.FC<SearchBarProps> = ({
           onPress={handleOutsidePress}
         >
           <View style={styles.row}>
-            <TouchableOpacity onPress={() => setMenuVisible(true)}>
-              <Image
-                source={require('../assets/hamburger.png')}
-                style={styles.icon}
-              />
-            </TouchableOpacity>
+            {/* Use the new <Hamburger /> component */}
+            <Hamburger />
 
             <TextInput
               ref={inputRef}
@@ -151,22 +164,6 @@ const SearchBar: React.FC<SearchBarProps> = ({
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-
-        <Modal visible={menuVisible} transparent animationType="fade">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            onPress={() => setMenuVisible(false)}
-          >
-            <View style={styles.menu}>
-              <TouchableOpacity onPress={() => { /* Handle settings */ }}>
-                <Text style={styles.menuText}>Settings</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { /* Handle bases */ }}>
-                <Text style={styles.menuText}>Bases</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
       </LinearGradient>
 
       {/* Plus menu modal */}
@@ -206,16 +203,15 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.button, styles.sendButton]}
+                style={[styles.button, styles.sendButton, isProcessing && styles.buttonDisabled]}
+                disabled={isProcessing}
                 onPress={() => {
                   if (newUrl.trim()) {
-                    sendUrlToBackend(newUrl);
-                    setAddCardVisible(false);
-                    setNewUrl('');
+                    handleSendUrl(newUrl);
                   }
                 }}
               >
-                <Text style={styles.buttonText}>Send</Text>
+                <Text style={styles.buttonText}>{isProcessing ? 'Processing...' : 'Send'}</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -313,6 +309,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  buttonDisabled: {
+    backgroundColor: '#aaa',
   },
 });
 

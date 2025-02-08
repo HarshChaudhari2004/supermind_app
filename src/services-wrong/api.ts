@@ -1,6 +1,6 @@
 const BASE_URL = 'https://supermind-production.up.railway.app';
 
-export const sendUrlToBackend = async (url: string): Promise<void> => {
+export const sendUrlToBackend = async (url: string): Promise<any> => {
   try {
     let endpoint = '/web/api/analyze-website/';
     
@@ -21,6 +21,9 @@ export const sendUrlToBackend = async (url: string): Promise<void> => {
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    const data = await response.json();
+    return data;
   } catch (error) {
     console.error('Error sending URL to backend:', error);
     throw error;
