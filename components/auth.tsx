@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Alert, StyleSheet, View, useColorScheme } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { Button, Input } from '@rneui/themed'
+import Icon from 'react-native-vector-icons/MaterialIcons' // Add this import
 
 export default function Auth() {
   const colorScheme = useColorScheme()
@@ -46,7 +47,13 @@ export default function Auth() {
           label="Email"
           labelStyle={{ color: textColor }}
           inputStyle={{ color: textColor }}
-          leftIcon={{ type: 'font-awesome', name: 'envelope', color: textColor }}
+          leftIcon={
+            <Icon 
+              name="mail-outline" 
+              size={24} 
+              color={textColor} 
+            />
+          }
           onChangeText={setEmail}
           value={email}
           placeholder="email@address.com"
@@ -59,7 +66,13 @@ export default function Auth() {
           label="Password"
           labelStyle={{ color: textColor }}
           inputStyle={{ color: textColor }}
-          leftIcon={{ type: 'font-awesome', name: 'lock', color: textColor }}
+          leftIcon={
+            <Icon 
+              name="lock-outline" 
+              size={24} 
+              color={textColor} 
+            />
+          }
           onChangeText={setPassword}
           value={password}
           secureTextEntry

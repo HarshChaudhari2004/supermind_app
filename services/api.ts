@@ -1,6 +1,12 @@
-// services/api.ts
+import { supabase } from '../lib/supabase';
 
-const BASE_URL = 'https://supermind-production.up.railway.app';
+// const BASE_URL = __DEV__ 
+//   ? 'https://tragic-christal-supermind-b64b5075.koyeb.app'  // Local development
+//   : 'http://192.168.0.104:8000'; // Production
+
+const BASE_URL = __DEV__ 
+  ? 'http://192.168.0.104:8000'  // Local development
+  : 'https://tragic-christal-supermind-b64b5075.koyeb.app'; // Production
 
 // Helper functions to check URL type
 function isYouTubeUrl(url: string): boolean {
@@ -11,70 +17,170 @@ function isInstagramUrl(url: string): boolean {
   return url.includes("instagram.com");
 }
 
-// Function to send the URL to the appropriate backend based on platform
-export const sendUrlToBackend = async (url: string) => {
-  let backendUrl = '';
-
-  // Determine backend URL based on URL type
-  if (isYouTubeUrl(url)) {
-    backendUrl = "/api/generate-summary/";
-  } else if (isInstagramUrl(url)) {
-    backendUrl = "/instagram/api/analyze-instagram/";
-  } else {
-    backendUrl = "/web/api/analyze-website/";
+// Function to get auth header
+async function getAuthHeader() {
+  const session = await supabase.auth.getSession();
+  if (!session.data.session?.access_token) {
+    throw new Error('No authentication token found');
   }
+  return {
+    'Authorization': `Bearer ${session.data.session.access_token}`,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  };
+}
 
-  // Try to process the URL and send it to the backend
+// Add new function to get current user ID
+async function getCurrentUserId() {
+  const session = await supabase.auth.getSession();
+  if (!session.data.session?.user?.id) {
+    throw new Error('No authenticated user found');
+  }
+  return session.data.session.user.id;
+}
+
+// Add this function to get CSRF token
+async function getCsrfToken() {
   try {
-    console.log("Sending URL to backend:", BASE_URL + backendUrl, "with URL:", url); // Log the URL and endpoint
+    const response = await fetch(`${BASE_URL}/get-csrf-token/`);
+    const data = await response.json();
+    return data.csrfToken;
+  } catch (error) {
+    console.error('Error getting CSRF token:', error);
+    return null;
+  }
+}
 
-    // Send a GET request with URL as a query parameter
-    const response = await fetch(`${BASE_URL}${backendUrl}?url=${encodeURIComponent(url)}`, {
+// Function to save user notes
+export const saveUserNotes = async (originalUrl: string, userNotes: string) => {
+  try {
+    const headers = await getAuthHeader();
+    const userId = await getCurrentUserId();
+
+    const response = await fetch(`${BASE_URL}/api/save-notes/`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ 
+        originalUrl, 
+        userNotes,
+        user_id: userId 
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error saving notes:', error);
+    throw error;
+  }
+};
+
+// Update sendUrlToBackend function
+export const sendUrlToBackend = async (url: string) => {
+  try {
+    const headers = await getAuthHeader();
+    const userId = await getCurrentUserId();
+
+    let endpoint: string;
+
+    if (isYouTubeUrl(url)) {
+      endpoint = "/api/generate-summary/";
+    } else if (isInstagramUrl(url)) {
+      endpoint = "/instagram/api/analyze-instagram/";
+    } else {
+      endpoint = "/web/api/analyze-website/";
+    }
+
+    const requestUrl = new URL(`${BASE_URL}${endpoint}`);
+    requestUrl.searchParams.append('url', url);
+    requestUrl.searchParams.append('user_id', userId);
+
+    console.log('Sending request to:', requestUrl.toString());
+
+    const response = await fetch(requestUrl.toString(), {
       method: 'GET',
       headers: {
+        ...headers,
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
     });
 
     if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Server error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return { success: true, data: result };
+
+  } catch (error) {
+    console.error('sendUrlToBackend error:', error);
+    throw error;
+  }
+};
+
+// Modify the getVideoData function
+export const getVideoData = async () => {
+  try {
+    const headers = await getAuthHeader();
+    const userId = await getCurrentUserId();
+    
+    // First try getting data from Supabase directly
+    const { data: supabaseData, error } = await supabase
+      .from('content')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date_added', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    if (supabaseData && supabaseData.length > 0) {
+      return supabaseData;
+    }
+
+    // Fallback to backend API if needed
+    const response = await fetch(`${BASE_URL}/api/video-data/?user_id=${userId}`, { 
+      headers 
+    });
+    
+    if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      console.warn("Non-JSON response. Parsing as text.");
-      const text = await response.text();
-      console.log("Backend text response:", text);
-      return text;
-    }
-
+    
     const data = await response.json();
-    console.log("Backend response:", data); // Log the successful response
-
-    // Add verification of response data
-    if (!data.success && !data.Status) {
-      throw new Error("Processing failed: " + (data.message || "Unknown error"));
-    }
-
-    // Wait a bit before confirming success to allow backend processing
-    await new Promise<void>(resolve => setTimeout(() => resolve(), 2000));
-    
-    // Verify the data was actually added by fetching latest data
-    const verifyResponse = await fetch(`${BASE_URL}/api/video-data/`);
-    const verifyData = await verifyResponse.json();
-    
-    const urlExists = verifyData.some((item: any) => 
-      item.URL === url || item['Video URL'] === url
-    );
-
-    if (!urlExists) {
-      throw new Error("URL was processed but not found in database");
-    }
-
     return data;
+    
   } catch (error) {
-    console.error("Error sending URL to backend:", error); // Log error details
+    console.error('Error fetching data:', error);
+    throw error;
+  }
+};
+
+// Add this new function
+export const deleteContent = async (contentId: string) => {
+  try {
+    const headers = await getAuthHeader();
+    const userId = await getCurrentUserId();
+
+    // Delete from Supabase
+    const { error } = await supabase
+      .from('content')
+      .delete()
+      .eq('id', contentId)
+      .eq('user_id', userId); // For security, ensure user owns the content
+
+    if (error) {
+      throw error;
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting content:', error);
     throw error;
   }
 };

@@ -90,8 +90,11 @@ const App = () => {
       ) : (
         <>
           <SearchBar value={searchTerm} onSearch={handleSearch} />
-          <Cards key={reloadKey} searchTerm={searchTerm} />
-          <Text>{session.user.id}</Text>
+          <Cards 
+            key={reloadKey} 
+            searchTerm={searchTerm} 
+            userId={session.user.id} 
+          />
         </>
       )}
     </View>

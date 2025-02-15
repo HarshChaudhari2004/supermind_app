@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -7,15 +7,29 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
+  Linking,
 } from 'react-native';
 import WebView from 'react-native-webview';
+import { saveUserNotes } from '../services/api';
 
+// Update the interface first to match Supabase data structure
 interface PopupProps {
   visible: boolean;
-  item: any;
+  item: {
+    id: string;
+    user_id: string;
+    title: string;
+    tags: string;
+    summary: string;
+    thumbnail_url: string;
+    original_url: string;
+    date_added: string;
+    // Add other fields as needed
+  } | null;
   onClose: () => void;
   onSaveNote: (note: string) => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void>;
   onShare: () => void;
 }
 
@@ -30,23 +44,109 @@ const Popup: React.FC<PopupProps> = ({
   const [note, setNote] = useState('');
   const [showFullSummary, setShowFullSummary] = useState(false);
   const [showTags, setShowTags] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  if (!item) return null;
+  // Reset states when popup closes
+  useEffect(() => {
+    if (!visible) {
+      setNote('');
+      setShowFullSummary(false);
+      setShowTags(false);
+    }
+  }, [visible]);
+
+  if (!item || !visible) return null;
 
   // Helper to display partial text
   const shortenedText = (text: string, limit: number) =>
-    text.length > limit ? text.slice(0, limit) + '...' : text;
+    text?.length > limit ? text.slice(0, limit) + '...' : text || '';
 
-  // Limit the number of tags displayed initially
-  const initialTags = item.Tags?.split(', ').slice(0, 5) || [];
-  const allTags = item.Tags?.split(', ') || [];
+  // Parse tags - handle both comma-separated string and array formats
+  const parseTags = (tags: string | string[] | null | undefined) => {
+    if (!tags) return [];
+    if (Array.isArray(tags)) return tags;
+    return tags.split(',').map(tag => tag.trim());
+  };
+
+  const initialTags = parseTags(item.tags).slice(0, 5);
+  const allTags = parseTags(item.tags);
+
+  const handleSaveNote = async (noteText: string) => {
+    try {
+      await saveUserNotes(item.original_url, noteText);
+      onSaveNote(noteText);
+      Alert.alert('Success', 'Note saved successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save note');
+      console.error('Error saving note:', error);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+      await onDelete();
+    } catch (error) {
+      console.error('Error in handleDelete:', error);
+      Alert.alert('Error', 'Failed to delete content');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleVisit = async (url: string) => {
+    try {
+      // Clean and format the URL
+      let formattedUrl = url;
+      
+      // Add https:// if not present
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        formattedUrl = 'https://' + url;
+      }
+  
+      // Encode the URL properly
+      const encodedUrl = encodeURI(formattedUrl);
+      
+      console.log('Attempting to open URL:', encodedUrl); // Debug log
+      
+      const supported = await Linking.canOpenURL(encodedUrl);
+      if (supported) {
+        await Linking.openURL(encodedUrl);
+      } else {
+        // Try alternate URL formats for specific platforms
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+          // Try opening in YouTube app
+          const youtubeUrl = url.replace('youtube.com/watch?v=', 'youtube.com/v/');
+          await Linking.openURL(youtubeUrl);
+        } else if (url.includes('instagram.com')) {
+          // Try opening in Instagram app
+          const instagramUrl = `instagram://browse/${url.split('instagram.com/')[1]}`;
+          try {
+            await Linking.openURL(instagramUrl);
+          } catch {
+            // Fallback to browser if app not installed
+            await Linking.openURL(encodedUrl);
+          }
+        } else {
+          await Linking.openURL(encodedUrl);
+        }
+      }
+    } catch (error) {
+      console.error('Error opening URL:', error);
+      Alert.alert(
+        'Error',
+        'Could not open the URL. Please check if you have a suitable app installed.'
+      );
+    }
+  };
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent={false}
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       <View style={styles.container}>
         <TouchableOpacity style={styles.closeButton} onPress={onClose}>
           <Text style={styles.closeText}>×</Text>
@@ -54,27 +154,43 @@ const Popup: React.FC<PopupProps> = ({
 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={{ height: 500 }}>
-            <WebView
-              source={{ uri: item['Original URL'] }}
-              nestedScrollEnabled
-              style={styles.webview}
-              javaScriptEnabled
-              domStorageEnabled
-              scrollEnabled
-            />
+            {item.original_url && (
+              <>
+                <WebView
+                  source={{ uri: item.original_url }}
+                  nestedScrollEnabled
+                  style={styles.webview}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  scrollEnabled
+                />
+                <TouchableOpacity 
+                  style={styles.visitButton}
+                  onPress={() => handleVisit(item.original_url)}
+                >
+                  <Text style={styles.visitButtonText}>Visit</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Title:</Text>
+            <Text style={styles.summaryText}>{item.title}</Text>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Summary:</Text>
             <Text style={styles.summaryText}>
               {showFullSummary
-                ? item.Summary
-                : shortenedText(item.Summary || '', 142)}
+                ? item.summary
+                : shortenedText(item.summary, 142)}
             </Text>
-            {item.Summary?.length > 142 && (
+            {item.summary?.length > 142 && (
               <TouchableOpacity
                 onPress={() => setShowFullSummary(!showFullSummary)}
-                style={styles.readMoreButton}>
+                style={styles.readMoreButton}
+              >
                 <Text style={styles.readMoreText}>
                   {showFullSummary ? 'Show Less' : 'Read More'}
                 </Text>
@@ -82,23 +198,25 @@ const Popup: React.FC<PopupProps> = ({
             )}
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Tags:</Text>
-            <View style={styles.tagsContainer}>
-              {(showTags ? allTags : initialTags).map((tag: string, index: number) => (
-                <TouchableOpacity key={index}>
-                  <Text style={styles.tag}>#{tag}</Text>
-                </TouchableOpacity>
-              ))}
-              {allTags.length > 5 && (
-                <TouchableOpacity onPress={() => setShowTags(!showTags)}>
-                  <Text style={[styles.tag, styles.moreTag]}>
-                    {showTags ? 'Hide tags' : `+${allTags.length - 5} more`}
-                  </Text>
-                </TouchableOpacity>
-              )}
+          {allTags.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Tags:</Text>
+              <View style={styles.tagsContainer}>
+                {(showTags ? allTags : initialTags).map((tag: string, index: number) => (
+                  <TouchableOpacity key={index}>
+                    <Text style={styles.tag}>#{tag}</Text>
+                  </TouchableOpacity>
+                ))}
+                {allTags.length > 5 && (
+                  <TouchableOpacity onPress={() => setShowTags(!showTags)}>
+                    <Text style={[styles.tag, styles.moreTag]}>
+                      {showTags ? 'Hide tags' : `+${allTags.length - 5} more`}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-          </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notes</Text>
@@ -106,6 +224,7 @@ const Popup: React.FC<PopupProps> = ({
               style={styles.textInput}
               multiline
               placeholder="Add your notes here..."
+              placeholderTextColor="#666"
               value={note}
               onChangeText={setNote}
             />
@@ -113,15 +232,22 @@ const Popup: React.FC<PopupProps> = ({
         </ScrollView>
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
-            <Text style={styles.buttonText}>Delete</Text>
+          <TouchableOpacity 
+            style={[styles.deleteButton, isDeleting && styles.buttonDisabled]}
+            onPress={handleDelete}
+            disabled={isDeleting}
+          >
+            <Text style={styles.buttonText}>
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.shareButton} onPress={onShare}>
             <Text style={styles.buttonText}>Share</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.saveButton}
-            onPress={() => onSaveNote(note)}>
+            onPress={() => handleSaveNote(note)}
+          >
             <Text style={styles.buttonText}>Save</Text>
           </TouchableOpacity>
         </View>
@@ -238,6 +364,31 @@ const styles = StyleSheet.create({
   },
   moreTag: {
     backgroundColor: '#3a3a3a',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  visitButton: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: '#bc10e3',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  visitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

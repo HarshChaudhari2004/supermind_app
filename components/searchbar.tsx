@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Hamburger from './hamburger';
+import { sendUrlToBackend } from '../services/api';
 
 // Helper functions
 function isYouTubeUrl(url: string) {
@@ -19,68 +20,6 @@ function isYouTubeUrl(url: string) {
 function isInstagramUrl(url: string) {
   return url.includes("instagram.com");
 }
-async function sendUrlToBackend(url: string) {
-  // Check if the URL is a shortened YouTube URL
-  if (url.includes("youtu.be")) {
-    const videoId = url.split("youtu.be/")[1];
-    if (videoId) {
-      url = `https://www.youtube.com/watch?v=${videoId}`; // Convert to full YouTube URL
-    } else {
-      Alert.alert("Error", "Invalid shortened YouTube URL format.");
-      return; // Exit if the URL is invalid
-    }
-  }
-
-  let backendUrl = '';
-  if (isYouTubeUrl(url)) {
-    backendUrl = "https://supermind-production.up.railway.app/api/generate-summary/";
-  } else if (isInstagramUrl(url)) {
-    backendUrl = "https://supermind-production.up.railway.app/instagram/api/analyze-instagram/";
-  } else {
-    backendUrl = "https://supermind-production.up.railway.app/web/api/analyze-website/";
-  }
-
-  try {
-    console.log("Sending URL to backend:", backendUrl, "with URL:", url); // Logging for debugging
-
-    const response = await fetch(`${backendUrl}?url=${encodeURIComponent(url)}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      console.warn("Non-JSON response. Parsing as text.");
-      const text = await response.text();
-      console.log("Backend text response:", text);
-      return text;
-    }
-
-    const data = await response.json();
-    console.log("Backend response:", data);
-    Alert.alert("Success", "Data processed successfully!");
-    return data;
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error("Error sending URL to backend:", error.message);
-    } else {
-      console.error("Error sending URL to backend:", error);
-    }
-    Alert.alert(
-      "Error",
-      `Failed to process URL. Server returned error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`
-    );
-    throw error;
-  }
-}
-
 
 interface SearchBarProps {
   placeholder?: string;
@@ -118,14 +57,37 @@ const SearchBar: React.FC<SearchBarProps> = ({
       await sendUrlToBackend(url);
       setAddCardVisible(false);
       setNewUrl('');
-      Alert.alert("Success", "URL processed and added successfully!");
-      onAddCard?.(); // Call the refresh function
+      Alert.alert("Success", "Added to your knowledge base");
+      // Trigger a refresh in parent component
+      if (onAddCard) {
+        onAddCard();
+      }
     } catch (error) {
-      Alert.alert("Error", `Failed to process URL: ${error.message}`);
+      Alert.alert("Error", error instanceof Error ? error.message : 'Failed to process URL');
     } finally {
       setIsProcessing(false);
     }
   };
+
+  const renderSendButton = () => (
+    <TouchableOpacity
+      style={[
+        styles.button, 
+        styles.sendButton, 
+        isProcessing && styles.buttonDisabled
+      ]}
+      disabled={isProcessing || !newUrl.trim()}
+      onPress={() => {
+        if (newUrl.trim()) {
+          handleSendUrl(newUrl);
+        }
+      }}
+    >
+      <Text style={styles.buttonText}>
+        {isProcessing ? 'Processing...' : 'Send'}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
     <>
@@ -202,17 +164,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
               >
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.sendButton, isProcessing && styles.buttonDisabled]}
-                disabled={isProcessing}
-                onPress={() => {
-                  if (newUrl.trim()) {
-                    handleSendUrl(newUrl);
-                  }
-                }}
-              >
-                <Text style={styles.buttonText}>{isProcessing ? 'Processing...' : 'Send'}</Text>
-              </TouchableOpacity>
+              {renderSendButton()}
             </View>
           </TouchableOpacity>
         </View>
@@ -312,6 +264,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     backgroundColor: '#aaa',
+    opacity: 0.7,
   },
 });
 
