@@ -25,12 +25,15 @@ interface PopupProps {
     thumbnail_url: string;
     original_url: string;
     date_added: string;
+    user_notes?: string;  // Add this field
+    video_type?: string;
     // Add other fields as needed
   } | null;
   onClose: () => void;
   onSaveNote: (note: string) => void;
   onDelete: () => Promise<void>;
   onShare: () => void;
+  onRefresh?: () => void;  // Add this prop
 }
 
 const Popup: React.FC<PopupProps> = ({
@@ -40,8 +43,10 @@ const Popup: React.FC<PopupProps> = ({
   onSaveNote,
   onDelete,
   onShare,
+  onRefresh,
 }) => {
   const [note, setNote] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const [showFullSummary, setShowFullSummary] = useState(false);
   const [showTags, setShowTags] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -50,10 +55,18 @@ const Popup: React.FC<PopupProps> = ({
   useEffect(() => {
     if (!visible) {
       setNote('');
+      setIsEditing(false);
       setShowFullSummary(false);
       setShowTags(false);
     }
   }, [visible]);
+
+  // When item changes, update note state
+  useEffect(() => {
+    if (item?.user_notes) {
+      setNote(item.user_notes);
+    }
+  }, [item]);
 
   if (!item || !visible) return null;
 
@@ -73,8 +86,10 @@ const Popup: React.FC<PopupProps> = ({
 
   const handleSaveNote = async (noteText: string) => {
     try {
-      await saveUserNotes(item.original_url, noteText);
+      await saveUserNotes(item.id, noteText);
       onSaveNote(noteText);
+      onRefresh?.(); // Trigger refresh after saving
+      setIsEditing(false);
       Alert.alert('Success', 'Note saved successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to save note');
@@ -140,6 +155,75 @@ const Popup: React.FC<PopupProps> = ({
     }
   };
 
+  // Add new function to render note content
+  const renderNoteContent = () => {
+    if (item?.video_type === 'note') {
+      return (
+        <View style={styles.noteContainer}>
+          {isEditing ? (
+            <TextInput
+              style={styles.noteInput}
+              multiline
+              value={note}
+              onChangeText={setNote}
+              autoFocus
+              placeholder="Write your note here..."
+              placeholderTextColor="#666"
+            />
+          ) : (
+            <TouchableOpacity onPress={() => setIsEditing(true)}>
+              <Text style={styles.noteText}>{note}</Text>
+              <Text style={styles.editHint}>Tap to edit</Text>
+            </TouchableOpacity>
+          )}
+          {isEditing && (
+            <View style={styles.editButtons}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => {
+                  setNote(item.user_notes || '');
+                  setIsEditing(false);
+                }}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.saveButton}
+                onPress={() => handleSaveNote(note)}
+              >
+                <Text style={styles.buttonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    // Return WebView for non-note content
+    return (
+      <View style={{ height: 500 }}>
+        {item.original_url && (
+          <>
+            <WebView
+              source={{ uri: item.original_url }}
+              nestedScrollEnabled
+              style={styles.webview}
+              javaScriptEnabled
+              domStorageEnabled
+              scrollEnabled
+            />
+            <TouchableOpacity 
+              style={styles.visitButton}
+              onPress={() => handleVisit(item.original_url)}
+            >
+              <Text style={styles.visitButtonText}>Visit</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    );
+  };
+
   return (
     <Modal
       visible={visible}
@@ -153,50 +237,56 @@ const Popup: React.FC<PopupProps> = ({
         </TouchableOpacity>
 
         <ScrollView contentContainerStyle={styles.content}>
-          <View style={{ height: 500 }}>
-            {item.original_url && (
-              <>
-                <WebView
-                  source={{ uri: item.original_url }}
-                  nestedScrollEnabled
-                  style={styles.webview}
-                  javaScriptEnabled
-                  domStorageEnabled
-                  scrollEnabled
-                />
-                <TouchableOpacity 
-                  style={styles.visitButton}
-                  onPress={() => handleVisit(item.original_url)}
-                >
-                  <Text style={styles.visitButtonText}>Visit</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+          {renderNoteContent()}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Title:</Text>
             <Text style={styles.summaryText}>{item.title}</Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Summary:</Text>
-            <Text style={styles.summaryText}>
-              {showFullSummary
-                ? item.summary
-                : shortenedText(item.summary, 142)}
-            </Text>
-            {item.summary?.length > 142 && (
-              <TouchableOpacity
-                onPress={() => setShowFullSummary(!showFullSummary)}
-                style={styles.readMoreButton}
-              >
-                <Text style={styles.readMoreText}>
-                  {showFullSummary ? 'Show Less' : 'Read More'}
+          {/* Only show summary and notes sections for non-note content */}
+          {item?.video_type !== 'note' && (
+            <>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Summary:</Text>
+                <Text style={styles.summaryText}>
+                  {showFullSummary
+                    ? item.summary
+                    : shortenedText(item.summary, 142)}
                 </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                {item.summary?.length > 142 && (
+                  <TouchableOpacity
+                    onPress={() => setShowFullSummary(!showFullSummary)}
+                    style={styles.readMoreButton}
+                  >
+                    <Text style={styles.readMoreText}>
+                      {showFullSummary ? 'Show Less' : 'Read More'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Notes</Text>
+                
+                {/* Display existing notes */}
+                {item?.user_notes && (
+                  <View style={styles.existingNotesContainer}>
+                    <Text style={styles.existingNotes}>{item.user_notes}</Text>
+                  </View>
+                )}
+                
+                <TextInput
+                  style={styles.textInput}
+                  multiline
+                  placeholder="Add your notes here..."
+                  placeholderTextColor="#666"
+                  value={note}
+                  onChangeText={setNote}
+                />
+              </View>
+            </>
+          )}
 
           {allTags.length > 0 && (
             <View style={styles.section}>
@@ -217,18 +307,6 @@ const Popup: React.FC<PopupProps> = ({
               </View>
             </View>
           )}
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Notes</Text>
-            <TextInput
-              style={styles.textInput}
-              multiline
-              placeholder="Add your notes here..."
-              placeholderTextColor="#666"
-              value={note}
-              onChangeText={setNote}
-            />
-          </View>
         </ScrollView>
 
         <View style={styles.buttonContainer}>
@@ -243,12 +321,6 @@ const Popup: React.FC<PopupProps> = ({
           </TouchableOpacity>
           <TouchableOpacity style={styles.shareButton} onPress={onShare}>
             <Text style={styles.buttonText}>Share</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.saveButton}
-            onPress={() => handleSaveNote(note)}
-          >
-            <Text style={styles.buttonText}>Save</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -390,6 +462,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  existingNotesContainer: {
+    backgroundColor: '#2a2a2a',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  existingNotes: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  noteContainer: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    minHeight: 200,
+  },
+  noteInput: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 24,
+    textAlignVertical: 'top',
+    minHeight: 200,
+  },
+  noteText: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  editHint: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  editButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 16,
+    gap: 12,
+  },
+  cancelButton: {
+    backgroundColor: '#444',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
 });
-
 export default Popup;

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -12,6 +12,8 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import Hamburger from './hamburger';
 import { sendUrlToBackend } from '../services/api';
+import { supabase } from '../lib/supabase';
+import { SearchResult } from '../types';
 
 // Helper functions
 function isYouTubeUrl(url: string) {
@@ -21,18 +23,55 @@ function isInstagramUrl(url: string) {
   return url.includes("instagram.com");
 }
 
+// Expose the search function through props
 interface SearchBarProps {
   placeholder?: string;
   onSearch: (text: string) => void;
   value: string;
-  onAddCard?: () => void; // Add this prop
+  onAddCard?: () => void;
 }
 
+// Update the performSmartSearch function
+export const performSmartSearch = async (query: string): Promise<SearchResult[]> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    // Use direct database search for empty query
+    if (!query.trim()) {
+      const { data: recentData, error: recentError } = await supabase
+        .from('content')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date_added', { ascending: false })
+        .limit(50);
+
+      if (recentError) throw recentError;
+      return recentData || [];
+    }
+
+    // Call the search_content function for non-empty queries
+    const { data, error } = await supabase
+      .rpc('search_content', {
+        search_query: query.toLowerCase()
+      })
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return data || [];
+
+  } catch (error) {
+    console.error('Search error:', error);
+    throw error;
+  }
+};
+
+// Update the SearchBar component to handle real-time search
 const SearchBar: React.FC<SearchBarProps> = ({
   placeholder = "Search your Mind... ",
   onSearch,
   value,
-  onAddCard, // Add this prop
+  onAddCard,
 }) => {
   const [typedValue, setTypedValue] = useState(value);
   const [plusMenuVisible, setPlusMenuVisible] = useState(false);
@@ -41,9 +80,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
+  // Add debounce timer ref
+  const searchTimerRef = useRef<NodeJS.Timeout>();
+
   const clearSearch = () => {
     setTypedValue('');
-    onSearch('');
+    onSearch(''); // This will now trigger ThoughtField visibility
     inputRef.current?.blur(); // Remove focus after clearing
   };
 
@@ -89,6 +131,30 @@ const SearchBar: React.FC<SearchBarProps> = ({
     </TouchableOpacity>
   );
 
+  // Update handleSearchChange to be real-time
+  const handleSearchChange = (text: string) => {
+    setTypedValue(text);
+    
+    // Clear existing timer
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+
+    // Set new timer for 150ms debounce (reduced from 300ms)
+    searchTimerRef.current = setTimeout(() => {
+      onSearch(text);
+    }, 150);
+  };
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
     <>
       <LinearGradient
@@ -112,8 +178,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
               placeholder={placeholder}
               placeholderTextColor="#ffffff"
               onChangeText={(text) => {
-                setTypedValue(text);
-                onSearch(text);
+                handleSearchChange(text);
               }}
               value={typedValue}
             />

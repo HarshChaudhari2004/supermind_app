@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { YoutubeTranscript } from 'youtube-transcript';
 
 // const BASE_URL = __DEV__ 
 //   ? 'https://tragic-christal-supermind-b64b5075.koyeb.app'  // Local development
@@ -6,7 +7,7 @@ import { supabase } from '../lib/supabase';
 
 const BASE_URL = __DEV__ 
   ? 'http://192.168.0.104:8000'  // Local development
-  : 'https://tragic-christal-supermind-b64b5075.koyeb.app'; // Production
+  : 'https://crazymind-production.up.railway.app'; // Production
 
 // Helper functions to check URL type
 function isYouTubeUrl(url: string): boolean {
@@ -39,10 +40,15 @@ async function getCurrentUserId() {
   return session.data.session.user.id;
 }
 
-// Add this function to get CSRF token
+// Modified getCsrfToken function
 async function getCsrfToken() {
   try {
-    const response = await fetch(`${BASE_URL}/get-csrf-token/`);
+    const response = await fetch(`${BASE_URL}/get-csrf-token/`, {
+      credentials: 'include' // Important for CSRF
+    });
+    if (!response.ok) {
+      throw new Error('Failed to get CSRF token');
+    }
     const data = await response.json();
     return data.csrfToken;
   } catch (error) {
@@ -51,42 +57,70 @@ async function getCsrfToken() {
   }
 }
 
-// Function to save user notes
-export const saveUserNotes = async (originalUrl: string, userNotes: string) => {
+// Update saveUserNotes to work with both IDs and URLs
+export const saveUserNotes = async (idOrUrl: string, userNotes: string) => {
   try {
-    const headers = await getAuthHeader();
     const userId = await getCurrentUserId();
 
-    const response = await fetch(`${BASE_URL}/api/save-notes/`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ 
-        originalUrl, 
-        userNotes,
-        user_id: userId 
-      })
-    });
+    // Try update by ID first
+    const { data, error: idError } = await supabase
+      .from('content')
+      .update({ user_notes: userNotes })
+      .match({ id: idOrUrl, user_id: userId });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    return await response.json();
+    if (!idError) return { success: true, data };
+
+    // If ID update fails, try by URL
+    const { data: urlData, error: urlError } = await supabase
+      .from('content')
+      .update({ user_notes: userNotes })
+      .match({ original_url: idOrUrl, user_id: userId });
+
+    if (urlError) throw urlError;
+    return { success: true, data: urlData };
+
   } catch (error) {
     console.error('Error saving notes:', error);
     throw error;
   }
 };
 
-// Update sendUrlToBackend function
+// Add new function to fetch transcript from frontend
+async function getYouTubeTranscript(videoId: string): Promise<string | null> {
+  try {
+    const transcript = await YoutubeTranscript.fetchTranscript(videoId);
+    return transcript.map(item => item.text).join(' ');
+  } catch (error) {
+    console.error('Error fetching transcript:', error);
+    return null;
+  }
+}
+
+// Modify sendUrlToBackend function
 export const sendUrlToBackend = async (url: string) => {
   try {
     const headers = await getAuthHeader();
     const userId = await getCurrentUserId();
+    const csrfToken = await getCsrfToken(); // Get CSRF token
 
     let endpoint: string;
+    let requestData: any = { url, user_id: userId };
 
     if (isYouTubeUrl(url)) {
       endpoint = "/api/generate-summary/";
+      
+      const videoId = url.includes('youtu.be') 
+        ? url.split('/').pop()?.split('?')[0]
+        : url.split('v=')[1]?.split('&')[0];
+
+      if (!videoId) {
+        throw new Error('Invalid YouTube URL');
+      }
+
+      const transcript = await getYouTubeTranscript(videoId);
+      if (transcript) {
+        requestData.transcript = transcript;
+      }
     } else if (isInstagramUrl(url)) {
       endpoint = "/instagram/api/analyze-instagram/";
     } else {
@@ -94,19 +128,33 @@ export const sendUrlToBackend = async (url: string) => {
     }
 
     const requestUrl = new URL(`${BASE_URL}${endpoint}`);
-    requestUrl.searchParams.append('url', url);
-    requestUrl.searchParams.append('user_id', userId);
+    const method = (isYouTubeUrl(url) && requestData.transcript) ? 'POST' : 'GET';
+    
+    const requestHeaders = {
+      ...headers,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken || '', // Add CSRF token
+    };
 
-    console.log('Sending request to:', requestUrl.toString());
-
-    const response = await fetch(requestUrl.toString(), {
-      method: 'GET',
-      headers: {
-        ...headers,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    let response;
+    if (method === 'POST') {
+      response = await fetch(requestUrl.toString(), {
+        method: 'POST',
+        headers: requestHeaders,
+        credentials: 'include', // Important for CSRF
+        body: JSON.stringify(requestData)
+      });
+    } else {
+      Object.keys(requestData).forEach(key => 
+        requestUrl.searchParams.append(key, requestData[key])
+      );
+      response = await fetch(requestUrl.toString(), {
+        method: 'GET',
+        headers: requestHeaders,
+        credentials: 'include' // Important for CSRF
+      });
+    }
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -181,6 +229,32 @@ export const deleteContent = async (contentId: string) => {
     return { success: true };
   } catch (error) {
     console.error('Error deleting content:', error);
+    throw error;
+  }
+};
+
+// Add this new function
+export const processSharedUrl = async (url: string) => {
+  try {
+    const headers = await getAuthHeader();
+    const userId = await getCurrentUserId();
+
+    const response = await fetch(`${BASE_URL}/api/process-shared-url/`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        url,
+        user_id: userId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to process URL');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error processing shared URL:', error);
     throw error;
   }
 };
