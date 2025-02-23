@@ -5,6 +5,7 @@ import Popup from './popup';
 import { getVideoData, deleteContent } from '../services/api';
 import { supabase } from '../lib/supabase';
 import { SearchResult } from '../types';
+import CardSkeleton from './CardSkeleton';
 
 // Add interface for component props
 interface CardsProps {
@@ -34,6 +35,7 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [imageLoadStatus, setImageLoadStatus] = useState<{ [key: string]: boolean }>({});
+  const [localData, setLocalData] = useState<SearchResult[]>([]);
 
   // Remove duplicate clearSearch definition
   const clearSearch = useCallback(() => {
@@ -102,9 +104,11 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
       channel = supabase.channel('content-changes')
         .on('postgres_changes', 
           { event: '*', schema: 'public', table: 'content' },
-          () => {
-            // setRefreshKey(prev => prev + 1); <- REMOVE THIS
-            console.log('Content changed');
+          async (payload) => {
+            // Only refresh if not in search mode
+            if (!searchTerm) {
+              await fetchData();
+            }
           }
         )
         .subscribe();
@@ -112,31 +116,54 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     return () => {
       if (channel) supabase.removeChannel(channel);
     };
-  }, [userId]);
+  }, [userId, searchTerm]);
 
   // Optimize search effect
   useEffect(() => {
     const doSearch = async () => {
       try {
         setIsLoading(true);
+
+        // If search term is empty, show all cards
+        if (!searchTerm.trim()) {
+          setFilteredData(cardsData);
+          return;
+        }
+
+        // Try local search first for short queries
+        if (searchTerm.length <= 3) {
+          const localResults = cardsData.filter(item => 
+            (item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             item.user_notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             item.tags?.toLowerCase().includes(searchTerm.toLowerCase()))
+          );
+          setFilteredData(localResults);
+          return;
+        }
+
+        // For longer queries, use backend search
         const results = await performSearch(searchTerm);
-        
         if (Array.isArray(results)) {
           setFilteredData(results);
-        } else {
-          console.warn('Search returned invalid results:', results);
-          setFilteredData([]);
+          // Cache these results
+          setLocalData(results);
         }
       } catch (error) {
         console.error('Search error:', error);
-        setFilteredData([]);
+        // Fallback to local search on error
+        const localResults = cardsData.filter(item => 
+          (item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           item.user_notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           item.tags?.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+        setFilteredData(localResults);
       } finally {
         setIsLoading(false);
       }
     };
 
     doSearch();
-  }, [searchTerm, performSearch]);
+  }, [searchTerm, cardsData, performSearch]);
 
   const getAspectRatio = (url: string) => {
     if (url.includes('youtube')) return 16 / 9;
@@ -181,7 +208,7 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     let imageSource;
     try {
       if (item.video_type === 'note') {
-        imageSource = require('../assets/note.jpg');
+        imageSource = require('../assets/notes.png');
       } else if (thumbnailUrl) {
         imageSource = { uri: thumbnailUrl };
       } else {
@@ -216,11 +243,7 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={[styles.errorText, { color: '#fff' }]}>Loading...</Text>
-      </View>
-    );
+    return <CardSkeleton />;  // Use CardSkeleton instead of loading text
   }
 
   // Update the error state display

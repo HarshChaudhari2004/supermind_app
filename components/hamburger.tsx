@@ -7,9 +7,11 @@ import {
   Animated,
   Easing,
   Text,
-  StyleSheet
+  StyleSheet,
+  BackHandler,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import LinearGradient from 'react-native-linear-gradient';
 
 export default function Hamburger() {
   const [visible, setVisible] = useState(false);
@@ -62,6 +64,23 @@ export default function Hamburger() {
     { icon: 'help', label: 'Help & Support', onPress: () => {} },
   ];
 
+  useEffect(() => {
+    const backAction = () => {
+      if (visible) {
+        closeMenu();
+        return true;
+      }
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, [visible]);
+
   return (
     <>
       <TouchableOpacity onPress={openMenu}>
@@ -78,9 +97,22 @@ export default function Hamburger() {
           onPress={closeMenu}
         />
         <Animated.View style={[styles.menuContainer, { left: slideAnim }]}>
+          {/* Add branding at the top */}
+          <View style={styles.branding}>
+            <Image
+              source={require('../assets/logo.png')}
+              style={styles.brandLogo}
+            />
+            <Text style={styles.brandText}>SuperMind</Text>
+          </View>
+
           {/* Menu items section */}
           {menuItems.map((item, index) => (
-            <TouchableOpacity key={index} style={styles.menuItem} onPress={item.onPress}>
+            <TouchableOpacity 
+              key={index} 
+              style={styles.menuItem} 
+              onPress={item.onPress}
+            >
               <Image source={{ uri: item.icon }} style={styles.menuIcon} />
               <Text style={styles.menuText}>{item.label}</Text>
             </TouchableOpacity>
@@ -93,6 +125,10 @@ export default function Hamburger() {
               <Text style={styles.userEmail}>{userEmail || 'Not signed in'}</Text>
             </View>
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <Image
+                source={require('../assets/logout.png')}
+                style={styles.logoutIcon}
+              />
               <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
           </View>
@@ -113,10 +149,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 250,
     backgroundColor: '#1a1a1a',
-    paddingTop: 50,
     borderRightWidth: 1,
     borderRightColor: '#333',
-    paddingBottom: 140, // Add space for footer
+    paddingBottom: 140,
   },
   menuItem: {
     padding: 16,
@@ -147,7 +182,7 @@ const styles = StyleSheet.create({
   },
   emailContainer: {
     marginBottom: 12,
-    padding: 8,
+    padding: 12,
     borderRadius: 8,
     backgroundColor: '#2a2a2a',
   },
@@ -162,18 +197,41 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   logoutButton: {
-    backgroundColor: '#ff4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E53935', // Material Design Red 600
     padding: 12,
     borderRadius: 8,
-    alignItems: 'center',
     marginTop: 8,
+  },
+  logoutIcon: {
+    width: 24,
+    height: 24,
+    tintColor: '#fff',
+    marginRight: 8,
   },
   logoutText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  spacer: {
-    flex: 1,
+  branding: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#1a1a1a', // Remove gradient, use solid color
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  brandLogo: {
+    width: 32,
+    height: 32,
+    marginRight: 12,
+  },
+  brandText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
 });

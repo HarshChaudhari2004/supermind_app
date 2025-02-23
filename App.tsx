@@ -21,6 +21,7 @@ const App = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const [supabaseChannel, setSupabaseChannel] = useState<any>(null);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const cardsRef = useRef<{ clearSearch: () => void }>(null);
   const colorScheme = useColorScheme();
@@ -101,12 +102,15 @@ const App = () => {
           cardsRef.current.clearSearch();
         }
         return true; // Prevent default back behavior
+      } else if (isSearchFocused) {
+        setIsSearchFocused(false); // Clear focus state
+        return true;
       }
       return false; // Allow app to exit
     });
 
     return () => backHandler.remove();
-  }, [searchTerm]);
+  }, [searchTerm, isSearchFocused]);
 
   // Debounce search input
   const handleSearch = useCallback(
@@ -198,6 +202,8 @@ const App = () => {
     return <SplashScreen />;
   }
 
+  const showThoughtField = !searchTerm.trim(); // Add this line
+
   // 6. Wrap main render in SafeAreaView and add error boundaries
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor }}>
@@ -210,8 +216,9 @@ const App = () => {
               value={searchTerm} 
               onSearch={handleSearch}
               onAddCard={handleRefresh}
+              onFocusChange={setIsSearchFocused} // Add this prop
             />
-            <View style={{ flex: 1, marginBottom: 150 }}> {/* Add marginBottom here */}
+            <View style={{ flex: 1, marginBottom: !isSearchFocused && !searchTerm ? 150 : 0 }}>
               {session?.user?.id && (
                 <Cards 
                   ref={cardsRef}
@@ -223,16 +230,17 @@ const App = () => {
                 />
               )}
             </View>
-            <ThoughtField 
-              onRefresh={handleRefresh}
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                zIndex: 9999
-              }}
-            />
+            {!isSearchFocused && !searchTerm && (
+              <ThoughtField 
+                onRefresh={handleRefresh}
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                }}
+              />
+            )}
           </>
         )}
       </View>

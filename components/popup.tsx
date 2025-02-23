@@ -51,15 +51,24 @@ const Popup: React.FC<PopupProps> = ({
   const [showTags, setShowTags] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Add editableNote state
+  const [editableNote, setEditableNote] = useState('');
+  const [isNotesEditing, setIsNotesEditing] = useState(false);
+
   // Reset states when popup closes
   useEffect(() => {
     if (!visible) {
       setNote('');
+      setEditableNote('');
       setIsEditing(false);
+      setIsNotesEditing(false);
       setShowFullSummary(false);
       setShowTags(false);
+    } else if (item?.user_notes) {
+      setNote(item.user_notes);
+      setEditableNote(item.user_notes);
     }
-  }, [visible]);
+  }, [visible, item]);
 
   // When item changes, update note state
   useEffect(() => {
@@ -155,6 +164,20 @@ const Popup: React.FC<PopupProps> = ({
     }
   };
 
+  // Add function to handle notes editing for non-note cards
+  const handleNotesEdit = async () => {
+    try {
+      await saveUserNotes(item.id, editableNote);
+      onRefresh?.();
+      setIsNotesEditing(false);
+      Alert.alert('Success', 'Notes updated successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update notes');
+      console.error('Error updating notes:', error);
+      setEditableNote(note); // Reset to original on error
+    }
+  };
+
   // Add new function to render note content
   const renderNoteContent = () => {
     if (item?.video_type === 'note') {
@@ -224,6 +247,67 @@ const Popup: React.FC<PopupProps> = ({
     );
   };
 
+  // Update the notes section in the render method
+  const renderNotesSection = () => {
+    if (item?.video_type === 'note') return null;
+
+    return (
+      <View style={styles.section}>
+        <View style={styles.notesSectionHeader}>
+          <Text style={styles.sectionTitle}>Notes</Text>
+          {!isNotesEditing && (
+            <TouchableOpacity 
+              onPress={() => setIsNotesEditing(true)}
+              style={styles.editButton}
+            >
+              <Text style={styles.editButtonText}>Edit</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        {isNotesEditing ? (
+          <>
+            <TextInput
+              style={styles.notesInput}
+              multiline
+              value={editableNote}
+              onChangeText={setEditableNote}
+              placeholder="Add your notes here..."
+              placeholderTextColor="#666"
+              autoFocus
+            />
+            <View style={styles.notesEditButtons}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => {
+                  setEditableNote(note);
+                  setIsNotesEditing(false);
+                }}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.saveButton}
+                onPress={handleNotesEdit}
+              >
+                <Text style={styles.buttonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <TouchableOpacity 
+            onPress={() => setIsNotesEditing(true)}
+            style={styles.notesDisplay}
+          >
+            <Text style={styles.notesText}>
+              {note || 'Tap to add notes...'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   return (
     <Modal
       visible={visible}
@@ -266,25 +350,7 @@ const Popup: React.FC<PopupProps> = ({
                 )}
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Notes</Text>
-                
-                {/* Display existing notes */}
-                {item?.user_notes && (
-                  <View style={styles.existingNotesContainer}>
-                    <Text style={styles.existingNotes}>{item.user_notes}</Text>
-                  </View>
-                )}
-                
-                <TextInput
-                  style={styles.textInput}
-                  multiline
-                  placeholder="Add your notes here..."
-                  placeholderTextColor="#666"
-                  value={note}
-                  onChangeText={setNote}
-                />
-              </View>
+              {renderNotesSection()}
             </>
           )}
 
@@ -509,6 +575,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
+  },
+  notesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  editButton: {
+    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  editButtonText: {
+    color: '#bc10e3',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notesInput: {
+    backgroundColor: '#2a2a2a',
+    color: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  notesEditButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+    gap: 8,
+  },
+  notesDisplay: {
+    backgroundColor: '#2a2a2a',
+    padding: 12,
+    borderRadius: 8,
+    minHeight: 60,
+  },
+  notesText: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 24,
   },
 });
 export default Popup;

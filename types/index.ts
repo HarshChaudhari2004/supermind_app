@@ -12,3 +12,10 @@ export interface SearchResult {
   user_notes: string;
   relevance?: number;
 }
+
+export interface SearchOptions {
+  userId?: string;
+  limit?: number;
+  offset?: number;
+  orderBy?: string;
+}

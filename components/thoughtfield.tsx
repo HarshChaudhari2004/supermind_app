@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -52,6 +52,9 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
   const [isSaving, setIsSaving] = useState(false);
   const expandAnim = useState(new Animated.Value(120))[0];
 
+  // Add input ref
+  const inputRef = useRef<TextInput>(null);
+
   // Add back button handler
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -77,6 +80,7 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
 
   const handleBlur = () => {
     setIsExpanded(false);
+    inputRef.current?.blur(); // Add this line to remove focus
     Animated.spring(expandAnim, {
       toValue: 120,
       useNativeDriver: false,
@@ -140,7 +144,10 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
     >
       <LinearGradient
         colors={['#1a1a1a', '#2a2a2a']}
-        style={[styles.background, isExpanded && styles.expandedBackground]}
+        style={[
+          styles.background,
+          isExpanded && styles.expandedBackground
+        ]}
       >
         <View style={styles.header}>
           <Text style={styles.heading}>Quick Note</Text>
@@ -155,6 +162,7 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
           )}
         </View>
         <TextInput
+          ref={inputRef}  // Add ref here
           style={[styles.input, isExpanded && styles.expandedInput]}
           placeholder="Start typing here..."
           placeholderTextColor="#666"
@@ -183,7 +191,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.25,
     shadowRadius: 5.84,
-    zIndex: 9999,
+    zIndex: 1, // Reduce z-index when not expanded
   },
   expandedContainer: {
     position: 'absolute',
@@ -193,6 +201,7 @@ const styles = StyleSheet.create({
     right: 0,
     borderRadius: 0,
     backgroundColor: '#1a1a1a',
+    zIndex: 9999, // Higher z-index when expanded
   },
   checkMarkContainer: {
     width: 40,
@@ -214,7 +223,8 @@ const styles = StyleSheet.create({
   },
   background: {
     flex: 1,
-    padding: 20, // Increased padding
+    padding: 20,
+    paddingTop: 8, // Reduce top padding
   },
   heading: {
     color: 'hsla(278, 100%, 50%, 1)',

@@ -8,6 +8,7 @@ import {
   Modal,
   Text,
   Alert,
+  BackHandler,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Hamburger from './hamburger';
@@ -29,6 +30,7 @@ interface SearchBarProps {
   onSearch: (text: string) => void;
   value: string;
   onAddCard?: () => void;
+  onFocusChange?: (focused: boolean) => void; // Add this prop
 }
 
 // Update the performSmartSearch function
@@ -72,6 +74,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   onSearch,
   value,
   onAddCard,
+  onFocusChange, // Add this prop
 }) => {
   const [typedValue, setTypedValue] = useState(value);
   const [plusMenuVisible, setPlusMenuVisible] = useState(false);
@@ -86,11 +89,14 @@ const SearchBar: React.FC<SearchBarProps> = ({
   const clearSearch = () => {
     setTypedValue('');
     onSearch(''); // This will now trigger ThoughtField visibility
-    inputRef.current?.blur(); // Remove focus after clearing
+    inputRef.current?.blur(); // Make sure the input loses focus
   };
 
   const handleOutsidePress = () => {
-    inputRef.current?.blur(); // Remove focus from input
+    if (inputRef.current?.isFocused()) {
+      inputRef.current?.blur();
+      onFocusChange?.(false);
+    }
   };
 
   const handleSendUrl = async (url: string) => {
@@ -155,6 +161,29 @@ const SearchBar: React.FC<SearchBarProps> = ({
     };
   }, []);
 
+  // Update back button handler
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (inputRef.current?.isFocused()) {
+        inputRef.current?.blur();
+        onFocusChange?.(false);
+        return true;
+      }
+      return false;
+    });
+
+    return () => backHandler.remove();
+  }, [onFocusChange]);
+
+  // Update handleFocus and handleBlur
+  const handleFocus = () => {
+    onFocusChange?.(true);
+  };
+
+  const handleBlur = () => {
+    onFocusChange?.(false);
+  };
+
   return (
     <>
       <LinearGradient
@@ -181,6 +210,8 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 handleSearchChange(text);
               }}
               value={typedValue}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
             />
 
             <TouchableOpacity onPress={typedValue ? clearSearch : () => setPlusMenuVisible(true)}>
