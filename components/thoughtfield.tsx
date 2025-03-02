@@ -46,30 +46,33 @@ const CheckMarkIcon = () => (
 
 // Update ThoughtField styles and animation values
 export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) => {
-  // Group all state declarations together
+  // State management
   const [thought, setThought] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const expandAnim = useState(new Animated.Value(120))[0];
+  // Animation value for smooth transitions
+  const expandAnim = useState(new Animated.Value(80))[0]; // Reduced initial height
 
-  // Add input ref
+  // Reference to control the TextInput
   const inputRef = useRef<TextInput>(null);
 
-  // Add back button handler
+  // Handle Android back button when expanded
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       if (isExpanded) {
         handleBlur();
-        return true; // Prevent default back behavior
+        return true;
       }
-      return false; // Allow default back behavior
+      return false;
     });
 
     return () => backHandler.remove();
   }, [isExpanded]);
 
+  // Expand animation handler
   const handleFocus = () => {
     setIsExpanded(true);
+    // Animate to full screen with spring animation for smooth expansion
     Animated.spring(expandAnim, {
       toValue: Dimensions.get('window').height,
       useNativeDriver: false,
@@ -78,11 +81,13 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
     }).start();
   };
 
+  // Collapse animation handler
   const handleBlur = () => {
     setIsExpanded(false);
-    inputRef.current?.blur(); // Add this line to remove focus
+    inputRef.current?.blur();
+    // Animate back to minimized state
     Animated.spring(expandAnim, {
-      toValue: 120,
+      toValue: 80, // Reduced collapsed height
       useNativeDriver: false,
       friction: 8,
       tension: 20,
@@ -149,7 +154,10 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
           isExpanded && styles.expandedBackground
         ]}
       >
-        <View style={styles.header}>
+        <View style={[
+          styles.header,
+          isExpanded && styles.expandedHeader
+        ]}>
           <Text style={styles.heading}>Quick Note</Text>
           {isExpanded && (
             <TouchableOpacity 
@@ -162,8 +170,12 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
           )}
         </View>
         <TextInput
-          ref={inputRef}  // Add ref here
-          style={[styles.input, isExpanded && styles.expandedInput]}
+          ref={inputRef}
+          style={[
+            styles.input, 
+            isExpanded && styles.expandedInput,
+            !isExpanded && styles.collapsedInput
+          ]}
           placeholder="Start typing here..."
           placeholderTextColor="#666"
           multiline
@@ -178,31 +190,112 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
 };
 
 const styles = StyleSheet.create({
+  // Container styles
   container: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 90 : 70,
-    left: 10,
-    right: 10,
-    minHeight: 120,
-    borderRadius: 16,
-    overflow: 'hidden',
+    bottom: 10, // Add some bottom spacing
+    left: 10,   // Add side margins
+    right: 10,  // Add side margins
+    margin: 0,
+    minHeight: 100,
+    borderRadius: 10, // Make all corners rounded
+    overflow: 'visible', // Changed to show glow
     elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5.84,
-    zIndex: 1, // Reduce z-index when not expanded
+    zIndex: 1000,
+    // Restore glow effect
+    shadowColor: 'hsla(278, 100%, 50%, 0.7)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
   },
+  
+  // Expanded container styles
   expandedContainer: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
     right: 0,
+    margin: 0,
     borderRadius: 0,
     backgroundColor: '#1a1a1a',
-    zIndex: 9999, // Higher z-index when expanded
+    zIndex: 9999,
   },
+
+  // Background gradient styles
+  background: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 16, // Match container border radius
+    borderWidth: 1,
+    borderColor: 'hsla(278, 100%, 50%, 0.3)', // Add subtle border
+    backgroundColor: 'rgba(26, 26, 26, 0.98)',
+  },
+
+  // Header styles
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+
+  expandedHeader: {
+    paddingTop: Platform.OS === 'ios' ? 40 : 16, // Account for status bar
+    marginBottom: 16,
+  },
+
+  // Title styles
+  heading: {
+    color: 'hsla(278, 100%, 50%, 1)',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+
+  // Input field styles - collapsed state
+  collapsedInput: {
+    minHeight: 40, // Reduced height when collapsed
+    maxHeight: 40,
+    fontSize: 16,
+    marginBottom: 4, // Add small bottom margin
+  },
+
+  // Basic input styles
+  input: {
+    color: '#fff',
+    backgroundColor: '#333',
+    borderRadius: 12,
+    padding: 12,
+    textAlignVertical: 'top',
+  },
+
+  // Input field styles - expanded state
+  expandedInput: {
+    flex: 1,
+    fontSize: 18,
+    minHeight: '100%',
+    backgroundColor: '#2a2a2a',
+  },
+
+  // Background styles for expanded state
+  expandedBackground: {
+    borderRadius: 0,
+    paddingTop: 0,
+  },
+
+  // Check button styles
+  checkButton: {
+    padding: 12,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 24,
+    elevation: 4,
+  },
+
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+
+  // CheckMark icon styles
   checkMarkContainer: {
     width: 40,
     height: 40,
@@ -211,79 +304,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
   },
+
   checkMark: {
     color: '#fff',
     fontSize: 24,
     fontWeight: 'bold',
-  },
-  background: {
-    flex: 1,
-    padding: 20,
-    paddingTop: 8, // Reduce top padding
-  },
-  heading: {
-    color: 'hsla(278, 100%, 50%, 1)',
-    fontSize: 20, // Increased font size
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  input: {
-    // Text input sizing
-    minHeight: 80,       // Minimum height when collapsed
-    maxHeight: 150,      // Maximum height when expanded
-    padding: 12,         // Internal padding
-    
-    // Text styling
-    color: '#fff',
-    fontSize: 18,        // Text size
-    
-    // Visual
-    backgroundColor: '#333',
-    borderRadius: 12,
-    textAlignVertical: 'top',
-  },
-  saveButtonGradient: {
-    marginTop: 12,
-    borderRadius: 25,
-    alignSelf: 'flex-end',
-  },
-  saveButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  expandedBackground: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-  },
-  checkButton: {
-    padding: 12,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 24,
-  },
-  expandedInput: {
-    flex: 1,
-    fontSize: 18,
-    minHeight: 200,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
   },
 });
 

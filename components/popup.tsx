@@ -50,6 +50,7 @@ const Popup: React.FC<PopupProps> = ({
   const [showFullSummary, setShowFullSummary] = useState(false);
   const [showTags, setShowTags] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showFullTitle, setShowFullTitle] = useState(false); // Add this state
 
   // Add editableNote state
   const [editableNote, setEditableNote] = useState('');
@@ -168,8 +169,8 @@ const Popup: React.FC<PopupProps> = ({
   const handleNotesEdit = async () => {
     try {
       await saveUserNotes(item.id, editableNote);
-      onRefresh?.();
       setIsNotesEditing(false);
+      onRefresh?.(); // This will trigger a refresh of the cards list
       Alert.alert('Success', 'Notes updated successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to update notes');
@@ -245,6 +246,12 @@ const Popup: React.FC<PopupProps> = ({
         )}
       </View>
     );
+  };
+
+  // Add this helper function for title display
+  const getTruncatedTitle = (title: string) => {
+    if (!title) return '';
+    return showFullTitle ? title : title.length > 100 ? title.slice(0, 100) + '...' : title;
   };
 
   // Update the notes section in the render method
@@ -325,7 +332,11 @@ const Popup: React.FC<PopupProps> = ({
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Title:</Text>
-            <Text style={styles.summaryText}>{item.title}</Text>
+            <TouchableOpacity onPress={() => setShowFullTitle(!showFullTitle)}>
+              <Text style={[styles.summaryText, styles.titleText]}>
+                {getTruncatedTitle(item.title)}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Only show summary and notes sections for non-note content */}
@@ -619,6 +630,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     lineHeight: 24,
+  },
+  titleText: {
+    paddingVertical: 8, // Add padding for better touch area
+    paddingHorizontal: 4,
   },
 });
 export default Popup;

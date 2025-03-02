@@ -1,6 +1,5 @@
 import { supabase } from '../lib/supabase';
 import { YoutubeTranscript } from 'youtube-transcript';
-
 // const BASE_URL = __DEV__ 
 //   ? 'https://tragic-christal-supermind-b64b5075.koyeb.app'  // Local development
 //   : 'http://192.168.0.104:8000'; // Production
@@ -9,13 +8,59 @@ const BASE_URL = __DEV__
   ? 'http://192.168.0.104:8000'  // Local development
   : 'https://crazymind-production.up.railway.app'; // Production
 
+// Add this helper function at the top
+function generateSmartTitle(text: string): string {
+  // First try to get the first sentence
+  const firstSentence = text.split(/[.!?]\s+/)[0];
+  
+  // If first sentence is too long, get first line
+  if (firstSentence.length > 100) {
+    const firstLine = text.split('\n')[0];
+    // If first line is still too long, truncate with ellipsis
+    return firstLine.length > 100 ? 
+      firstLine.slice(0, 97) + '...' : 
+      firstLine;
+  }
+  
+  return firstSentence;
+}
+
 // Helper functions to check URL type
 function isYouTubeUrl(url: string): boolean {
-  return url.includes("youtube.com") || url.includes("youtu.be");
+  return url.includes("youtube.com") || url.includes("youtu.be") || url.includes("youtube.com/shorts");
 }
 
 function isInstagramUrl(url: string): boolean {
-  return url.includes("instagram.com");
+  // Updated pattern to match both reels and posts
+  return /instagram\.com\/(?:p|reels|reel)\/[A-Za-z0-9_-]+/.test(url);
+}
+
+// Add Reddit URL detection
+function isRedditUrl(url: string): boolean {
+  return url.includes('reddit.com/r/') || url.includes('redd.it/');
+}
+
+// Add helper function to extract video ID
+function extractYouTubeVideoId(url: string): string | null {
+  try {
+    let videoId: string | null = null;
+    
+    if (url.includes('youtube.com/shorts/')) {
+      // Handle YouTube Shorts URLs
+      videoId = url.split('shorts/')[1]?.split('?')[0];
+    } else if (url.includes('youtu.be/')) {
+      // Handle youtu.be URLs
+      videoId = url.split('youtu.be/')[1]?.split('?')[0];
+    } else if (url.includes('youtube.com/watch?v=')) {
+      // Handle standard YouTube URLs
+      videoId = url.split('v=')[1]?.split('&')[0];
+    }
+
+    return videoId || null;
+  } catch (error) {
+    console.error('Error extracting video ID:', error);
+    return null;
+  }
 }
 
 // Function to get auth header
@@ -61,11 +106,15 @@ async function getCsrfToken() {
 export const saveUserNotes = async (idOrUrl: string, userNotes: string) => {
   try {
     const userId = await getCurrentUserId();
+    const now = new Date().toISOString(); // Get current timestamp
 
     // Try update by ID first
     const { data, error: idError } = await supabase
       .from('content')
-      .update({ user_notes: userNotes })
+      .update({ 
+        user_notes: userNotes,
+        date_added: now // Update the timestamp
+      })
       .match({ id: idOrUrl, user_id: userId });
 
     if (!idError) return { success: true, data };
@@ -73,7 +122,10 @@ export const saveUserNotes = async (idOrUrl: string, userNotes: string) => {
     // If ID update fails, try by URL
     const { data: urlData, error: urlError } = await supabase
       .from('content')
-      .update({ user_notes: userNotes })
+      .update({ 
+        user_notes: userNotes,
+        date_added: now // Update the timestamp
+      })
       .match({ original_url: idOrUrl, user_id: userId });
 
     if (urlError) throw urlError;
@@ -109,10 +161,8 @@ export const sendUrlToBackend = async (url: string) => {
     if (isYouTubeUrl(url)) {
       endpoint = "/api/generate-summary/";
       
-      const videoId = url.includes('youtu.be') 
-        ? url.split('/').pop()?.split('?')[0]
-        : url.split('v=')[1]?.split('&')[0];
-
+      const videoId = extractYouTubeVideoId(url);
+      
       if (!videoId) {
         throw new Error('Invalid YouTube URL');
       }
@@ -123,6 +173,10 @@ export const sendUrlToBackend = async (url: string) => {
       }
     } else if (isInstagramUrl(url)) {
       endpoint = "/instagram/api/analyze-instagram/";
+      // Handle both reels and image posts with the same endpoint
+      requestData.type = url.includes('/p/') ? 'post' : 'reel';
+    } else if (isRedditUrl(url)) {
+      endpoint = "/web/api/analyze-reddit/"; // New Reddit endpoint
     } else {
       endpoint = "/web/api/analyze-website/";
     }
@@ -233,28 +287,45 @@ export const deleteContent = async (contentId: string) => {
   }
 };
 
-// Add this new function
-export const processSharedUrl = async (url: string) => {
+// Add this helper function to detect URLs
+function containsUrl(text: string): boolean {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return urlRegex.test(text);
+}
+
+// Modify processSharedUrl function to handle both URLs and notes
+export const processSharedContent = async (content: string) => {
   try {
     const headers = await getAuthHeader();
     const userId = await getCurrentUserId();
 
-    const response = await fetch(`${BASE_URL}/api/process-shared-url/`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        url,
-        user_id: userId
-      })
-    });
+    if (containsUrl(content)) {
+      // Extract first URL from text
+      const urlMatch = content.match(/(https?:\/\/[^\s]+)/);
+      const url = urlMatch ? urlMatch[0] : '';
+      return await sendUrlToBackend(url);
+    } else {
+      // Handle as note
+      const { error } = await supabase
+        .from('content')
+        .insert({
+          id: Math.random().toString(36).substr(2, 9),
+          user_id: userId,
+          title: generateSmartTitle(content),
+          video_type: 'note',
+          tags: 'shared_note',
+          user_notes: content,
+          date_added: new Date().toISOString(),
+          thumbnail_url: null,
+          original_url: null,
+          channel_name: 'Shared Notes'
+        });
 
-    if (!response.ok) {
-      throw new Error('Failed to process URL');
+      if (error) throw error;
+      return { success: true, data: { message: 'Note saved successfully' } };
     }
-
-    return await response.json();
   } catch (error) {
-    console.error('Error processing shared URL:', error);
+    console.error('Error processing shared content:', error);
     throw error;
   }
 };

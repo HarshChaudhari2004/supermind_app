@@ -70,10 +70,10 @@ export const performSmartSearch = async (query: string): Promise<SearchResult[]>
 
 // Update the SearchBar component to handle real-time search
 const SearchBar: React.FC<SearchBarProps> = ({
+  onAddCard, // This is our manual refresh trigger
   placeholder = "Search your Mind... ",
   onSearch,
   value,
-  onAddCard,
   onFocusChange, // Add this prop
 }) => {
   const [typedValue, setTypedValue] = useState(value);
@@ -108,7 +108,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
       Alert.alert("Success", "Added to your knowledge base");
       // Trigger a refresh in parent component
       if (onAddCard) {
-        onAddCard();
+        onAddCard(); // Manually trigger refresh
       }
     } catch (error) {
       Alert.alert("Error", error instanceof Error ? error.message : 'Failed to process URL');
@@ -301,41 +301,58 @@ const styles = StyleSheet.create({
     backgroundColor: '#00000099',
   },
   menu: {
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a1a',
     marginHorizontal: 50,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 10,
+    borderWidth: 1,
+    borderColor: 'hsla(278, 100%, 50%, 0.3)',
+    shadowColor: 'hsla(278, 100%, 50%, 0.5)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
   },
   menuText: {
-    padding: 10,
+    padding: 12,
     fontSize: 16,
+    color: '#fff',
+    fontWeight: '500',
   },
   overlay: {
     width: '100%',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#1a1a1a',
     marginHorizontal: 20,
     borderRadius: 12,
     padding: 20,
     minHeight: 200,
     width: '90%',
     alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'hsla(278, 100%, 50%, 0.3)',
+    shadowColor: 'hsla(278, 100%, 50%, 0.5)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
+    color: '#fff',
   },
   urlInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: 'hsla(278, 100%, 50%, 0.3)',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f5f5f5',
+    color: '#fff',
+    backgroundColor: '#2a2a2a',
     marginBottom: 20,
   },
   modalButtons: {
@@ -347,8 +364,10 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
     borderRadius: 8,
-    backgroundColor: '#ddd',
+    backgroundColor: '#2a2a2a',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'hsla(278, 100%, 50%, 0.3)',
   },
   sendButton: {
     backgroundColor: 'hsla(278, 100%, 50%, 1)',

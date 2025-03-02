@@ -9,7 +9,7 @@ import Cards from './components/cards';
 import SplashScreen from './components/splashscreen';
 import ThoughtField from './components/thoughtfield';
 import ShareMenu from 'react-native-share-menu';
-import { sendUrlToBackend } from './services/api';
+import { processSharedContent, sendUrlToBackend } from './services/api';
 import { urlProcessingEmitter } from './services/EventEmitter';
 import { performSmartSearch } from './components/searchbar';
 
@@ -127,12 +127,12 @@ const App = () => {
     if (!shareData?.data || !session?.user) return;
     
     try {
-      const url = Array.isArray(shareData.data) ? shareData.data[0] : shareData.data;
-      await sendUrlToBackend(url);
+      const content = Array.isArray(shareData.data) ? shareData.data[0] : shareData.data;
+      await processSharedContent(content);
       setReloadKey(prev => prev + 1);
-      Alert.alert('Success', 'URL processed successfully');
+      Alert.alert('Success', 'Content saved successfully');
     } catch (error) {
-      handleAPIError(error instanceof Error ? error : new Error('Failed to process URL'));
+      handleAPIError(error instanceof Error ? error : new Error('Failed to process content'));
     }
   }, [session, handleAPIError]);
 
@@ -171,33 +171,6 @@ const App = () => {
     return () => subscription.remove();
   }, [session]);
 
-  // Separate Supabase channel subscription
-  useEffect(() => {
-    if (session?.user?.id) {
-      const channel = supabase.channel('schema-db-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'content'
-          },
-          () => {
-            handleRefresh();
-          }
-        )
-        .subscribe();
-
-      setSupabaseChannel(channel);
-
-      return () => {
-        if (channel) {
-          supabase.removeChannel(channel);
-        }
-      };
-    }
-  }, [session?.user?.id, handleRefresh]);
-
   if (isLoading) {
     return <SplashScreen />;
   }
@@ -218,7 +191,10 @@ const App = () => {
               onAddCard={handleRefresh}
               onFocusChange={setIsSearchFocused} // Add this prop
             />
-            <View style={{ flex: 1, marginBottom: !isSearchFocused && !searchTerm ? 150 : 0 }}>
+            <View style={{ 
+              flex: 1, 
+              marginBottom: !isSearchFocused && !searchTerm ? 110 : 0 // Increased margin to prevent overlap
+            }}>
               {session?.user?.id && (
                 <Cards 
                   ref={cardsRef}
@@ -233,12 +209,6 @@ const App = () => {
             {!isSearchFocused && !searchTerm && (
               <ThoughtField 
                 onRefresh={handleRefresh}
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                }}
               />
             )}
           </>

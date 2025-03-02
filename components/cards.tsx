@@ -76,8 +76,12 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
         return;
       }
 
+      // Sort by date_added in descending order (newest first)
       const sortedData = data.sort((a, b) => {
-        return new Date(b.date_added).getTime() - new Date(a.date_added).getTime();
+        // Convert date strings to Date objects for proper comparison
+        const dateA = new Date(a.date_added).getTime();
+        const dateB = new Date(b.date_added).getTime();
+        return dateB - dateA; // Sort in descending order (newest first)
       });
 
       setCardsData(sortedData);
@@ -96,27 +100,6 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   useEffect(() => {
     fetchData();
   }, [fetchData, refreshKey]);
-
-  // Fix real-time subscription
-  useEffect(() => {
-    let channel: any;
-    if (userId) { // Only subscribe when user is logged in
-      channel = supabase.channel('content-changes')
-        .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'content' },
-          async (payload) => {
-            // Only refresh if not in search mode
-            if (!searchTerm) {
-              await fetchData();
-            }
-          }
-        )
-        .subscribe();
-    }
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, [userId, searchTerm]);
 
   // Optimize search effect
   useEffect(() => {
@@ -224,17 +207,28 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
       };
     }
 
+    // Add carousel indicator for image posts
+    const isCarousel = item.is_carousel;
+    const mediaCount = item.media_count;
+
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={() => setSelectedItem(item)}
       >
-        <Image
-          source={imageSource}
-          style={[styles.thumbnail, { aspectRatio: ratio }]}
-          onError={() => handleImageError(item.id)}
-          onLoad={() => handleImageLoad(item.id)}
-        />
+        <View>
+          <Image
+            source={imageSource}
+            style={[styles.thumbnail, { aspectRatio: ratio }]}
+            onError={() => handleImageError(item.id)}
+            onLoad={() => handleImageLoad(item.id)}
+          />
+          {isCarousel && (
+            <View style={styles.carouselIndicator}>
+              <Text style={styles.carouselCount}>{mediaCount}</Text>
+            </View>
+          )}
+        </View>
         <Text numberOfLines={2} ellipsizeMode="tail" style={styles.title}>
           {item.title}
         </Text>
@@ -269,10 +263,12 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
 
   const handleRefresh = async () => {
     try {
+      setRefreshing(true);
       await fetchData();
-      onRefresh?.();
     } catch (error) {
       console.error('Refresh error:', error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -332,15 +328,13 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
 const styles = StyleSheet.create({
   grid: {
     padding: 10,
-    paddingBottom: 200, // Increased padding for ThoughtField
+    paddingBottom: 20, // Increased padding for ThoughtField
   },
   card: {
     flex: 1,
     margin: 7,
     borderRadius: 10,
     overflow: 'hidden',
-    // backgroundColor: '#2a2a2a', // Add background color
-    // elevation: 3,
   },
   thumbnail: {
     width: '100%',
@@ -361,6 +355,20 @@ const styles = StyleSheet.create({
   errorText: {
     color: 'red',
     fontSize: 16,
+  },
+  carouselIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    padding: 4,
+    paddingHorizontal: 8,
+  },
+  carouselCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
