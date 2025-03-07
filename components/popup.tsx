@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import WebView from 'react-native-webview';
 import { saveUserNotes } from '../services/api';
+import { useSettings } from '../context/SettingsContext';
+import ThemedText from './ThemedText';
 
 // Update the interface first to match Supabase data structure
 interface PopupProps {
@@ -55,6 +57,10 @@ const Popup: React.FC<PopupProps> = ({
   // Add editableNote state
   const [editableNote, setEditableNote] = useState('');
   const [isNotesEditing, setIsNotesEditing] = useState(false);
+
+  // Add this to get theme settings
+  const { appTheme, fontSize } = useSettings();
+  const { colors } = appTheme;
 
   // Reset states when popup closes
   useEffect(() => {
@@ -261,7 +267,7 @@ const Popup: React.FC<PopupProps> = ({
     return (
       <View style={styles.section}>
         <View style={styles.notesSectionHeader}>
-          <Text style={styles.sectionTitle}>Notes</Text>
+          <ThemedText style={styles.sectionTitle} variant="heading">Notes</ThemedText>
           {!isNotesEditing && (
             <TouchableOpacity 
               onPress={() => setIsNotesEditing(true)}
@@ -306,14 +312,23 @@ const Popup: React.FC<PopupProps> = ({
             onPress={() => setIsNotesEditing(true)}
             style={styles.notesDisplay}
           >
-            <Text style={styles.notesText}>
+            <ThemedText variant="body" style={styles.notesText}>
               {note || 'Tap to add notes...'}
-            </Text>
+            </ThemedText>
           </TouchableOpacity>
         )}
       </View>
     );
   };
+
+  // Update the styles to use theme colors
+  const dynamicStyles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    // ...add more styles as needed
+  });
 
   return (
     <Modal
@@ -322,7 +337,7 @@ const Popup: React.FC<PopupProps> = ({
       transparent={false}
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <View style={dynamicStyles.container}>
         <TouchableOpacity style={styles.closeButton} onPress={onClose}>
           <Text style={styles.closeText}>×</Text>
         </TouchableOpacity>
@@ -331,11 +346,11 @@ const Popup: React.FC<PopupProps> = ({
           {renderNoteContent()}
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Title:</Text>
+            <ThemedText style={styles.sectionTitle} variant="heading">Title:</ThemedText>
             <TouchableOpacity onPress={() => setShowFullTitle(!showFullTitle)}>
-              <Text style={[styles.summaryText, styles.titleText]}>
+              <ThemedText style={[styles.summaryText, styles.titleText]}>
                 {getTruncatedTitle(item.title)}
-              </Text>
+              </ThemedText>
             </TouchableOpacity>
           </View>
 
@@ -343,12 +358,12 @@ const Popup: React.FC<PopupProps> = ({
           {item?.video_type !== 'note' && (
             <>
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Summary:</Text>
-                <Text style={styles.summaryText}>
+                <ThemedText style={styles.sectionTitle} variant="heading">Summary:</ThemedText>
+                <ThemedText style={styles.summaryText}>
                   {showFullSummary
                     ? item.summary
                     : shortenedText(item.summary, 142)}
-                </Text>
+                </ThemedText>
                 {item.summary?.length > 142 && (
                   <TouchableOpacity
                     onPress={() => setShowFullSummary(!showFullSummary)}
@@ -367,18 +382,18 @@ const Popup: React.FC<PopupProps> = ({
 
           {allTags.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Tags:</Text>
+              <ThemedText style={styles.sectionTitle} variant="heading">Tags:</ThemedText>
               <View style={styles.tagsContainer}>
                 {(showTags ? allTags : initialTags).map((tag: string, index: number) => (
                   <TouchableOpacity key={index}>
-                    <Text style={styles.tag}>#{tag}</Text>
+                    <ThemedText style={styles.tag}>#{tag}</ThemedText>
                   </TouchableOpacity>
                 ))}
                 {allTags.length > 5 && (
                   <TouchableOpacity onPress={() => setShowTags(!showTags)}>
-                    <Text style={[styles.tag, styles.moreTag]}>
+                    <ThemedText style={[styles.tag, styles.moreTag]}>
                       {showTags ? 'Hide tags' : `+${allTags.length - 5} more`}
-                    </Text>
+                    </ThemedText>
                   </TouchableOpacity>
                 )}
               </View>

@@ -10,10 +10,13 @@ import {
   Dimensions,
   Platform,
   BackHandler,
+  KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
 import { ViewStyle } from 'react-native';
 import { supabase } from '../lib/supabase';
 import LinearGradient from 'react-native-linear-gradient';
+import { useSettings } from '../context/SettingsContext'; // Add this import
 
 // Add this helper function at the top of the file
 const generateSmartTitle = (text: string): string => {
@@ -56,6 +59,10 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
   // Reference to control the TextInput
   const inputRef = useRef<TextInput>(null);
 
+  // Get screen dimensions for proper positioning
+  const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
+  const statusBarHeight = StatusBar.currentHeight || 0;
+
   // Handle Android back button when expanded
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -72,13 +79,21 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
   // Expand animation handler
   const handleFocus = () => {
     setIsExpanded(true);
+    
     // Animate to full screen with spring animation for smooth expansion
     Animated.spring(expandAnim, {
-      toValue: Dimensions.get('window').height,
+      toValue: screenHeight,
       useNativeDriver: false,
       friction: 8,
       tension: 20,
     }).start();
+    
+    // Focus the input after animation starts
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 100);
   };
 
   // Collapse animation handler
@@ -138,68 +153,132 @@ export const ThoughtField: React.FC<ThoughtFieldProps> = ({ onRefresh, style }) 
     }
   };
 
+  // Add this line to get theme
+  const { appTheme } = useSettings();
+  const { colors } = appTheme;
+
+  // Create dynamic styles using the theme
+  const dynamicStyles = {
+    container: {
+      ...styles.container,
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+    },
+    input: {
+      ...styles.input,
+      color: colors.text,
+    },
+    placeholder: {
+      color: colors.textSecondary, // This was missing a reference
+    },
+    submitButton: {
+      backgroundColor: colors.surfaceVariant, // This was missing a reference
+    },
+  };
+
   return (
-    <Animated.View 
-      style={[
-        styles.container, 
-        { height: expandAnim },
-        style,
-        isExpanded && styles.expandedContainer
-      ]}
-    >
-      <LinearGradient
-        colors={['#1a1a1a', '#2a2a2a']}
-        style={[
-          styles.background,
-          isExpanded && styles.expandedBackground
-        ]}
-      >
-        <View style={[
-          styles.header,
-          isExpanded && styles.expandedHeader
-        ]}>
-          <Text style={styles.heading}>Quick Note</Text>
-          {isExpanded && (
-            <TouchableOpacity 
-              style={[styles.checkButton, isSaving && styles.buttonDisabled]} 
-              onPress={saveThought}
-              disabled={isSaving || !thought.trim()}
+    <>
+      {/* When expanded, render a full-screen overlay to handle keyboard properly */}
+      {isExpanded ? (
+        <View style={styles.fullScreenContainer}>
+          <Animated.View 
+            style={[
+              dynamicStyles.container,
+              styles.expandedContainer,
+              { height: expandAnim }
+            ]}
+          >
+            <LinearGradient
+              colors={['#1a1a1a', '#2a2a2a']}
+              style={styles.expandedBackground}
             >
-              <CheckMarkIcon />
-            </TouchableOpacity>
-          )}
+              <View style={styles.expandedHeader}>
+                <Text style={styles.heading}>Quick Note</Text>
+                <TouchableOpacity 
+                  style={[styles.checkButton, isSaving && styles.buttonDisabled]} 
+                  onPress={saveThought}
+                  disabled={isSaving || !thought.trim()}
+                >
+                  <CheckMarkIcon />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.expandedInputContainer}>
+                <TextInput
+                  ref={inputRef}
+                  style={styles.expandedInput}
+                  placeholder="Start typing here..."
+                  placeholderTextColor="#666"
+                  multiline
+                  value={thought}
+                  onChangeText={setThought}
+                  autoFocus={true}
+                />
+              </View>
+            </LinearGradient>
+          </Animated.View>
         </View>
-        <TextInput
-          ref={inputRef}
-          style={[
-            styles.input, 
-            isExpanded && styles.expandedInput,
-            !isExpanded && styles.collapsedInput
-          ]}
-          placeholder="Start typing here..."
-          placeholderTextColor="#666"
-          multiline
-          value={thought}
-          onChangeText={setThought}
-          onFocus={handleFocus}
-          autoFocus={isExpanded}
-        />
-      </LinearGradient>
-    </Animated.View>
+      ) : (
+        /* Collapsed state - fixed at bottom */
+        <View style={styles.collapsedWrapper}>
+          <LinearGradient
+            colors={['#1a1a1a', '#2a2a2a']}
+            style={styles.background}
+          >
+            <View style={styles.header}>
+              <Text style={styles.heading}>Quick Note</Text>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.collapsedContainer}
+              onPress={handleFocus}
+              activeOpacity={0.8}
+            >
+              <Text style={[
+                styles.placeholder,
+                { color: colors.textSecondary }
+              ]}>Start typing here...</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+      )}
+    </>
   );
 };
 
 const styles = StyleSheet.create({
+  // Full screen container for expanded state
+  fullScreenContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  
+  // Collapsed wrapper fixed at bottom
+  collapsedWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    margin: 10,
+    borderRadius: 16,
+    minHeight: 80,
+    shadowColor: 'hsla(278, 100%, 50%, 0.7)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  
   // Container styles
   container: {
-    position: 'absolute',
-    bottom: 10, // Add some bottom spacing
-    left: 10,   // Add side margins
-    right: 10,  // Add side margins
-    margin: 0,
-    minHeight: 100,
-    borderRadius: 10, // Make all corners rounded
-    overflow: 'visible', // Changed to show glow
+    borderRadius: 10,
+    overflow: 'hidden',
     elevation: 8,
     zIndex: 1000,
     // Restore glow effect
@@ -211,15 +290,13 @@ const styles = StyleSheet.create({
   
   // Expanded container styles
   expandedContainer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
+    width: '100%',
+    height: '100%',
     margin: 0,
     borderRadius: 0,
     backgroundColor: '#1a1a1a',
     zIndex: 9999,
+    elevation: 9999,
   },
 
   // Background gradient styles
@@ -241,7 +318,11 @@ const styles = StyleSheet.create({
   },
 
   expandedHeader: {
-    paddingTop: Platform.OS === 'ios' ? 40 : 16, // Account for status bar
+    paddingTop: Platform.OS === 'ios' ? 40 : StatusBar.currentHeight || 16,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
 
@@ -250,6 +331,21 @@ const styles = StyleSheet.create({
     color: 'hsla(278, 100%, 50%, 1)',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+
+  // Add this style for the collapsed state container
+  collapsedContainer: {
+    minHeight: 40,
+    backgroundColor: '#333',
+    borderRadius: 12,
+    padding: 12,
+    justifyContent: 'center',
+  },
+  
+  // Add this for placeholder text in collapsed state
+  placeholder: {
+    color: '#666',
+    fontSize: 16,
   },
 
   // Input field styles - collapsed state
@@ -269,18 +365,29 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
+  // Add this for better input container in expanded mode
+  expandedInputContainer: {
+    flex: 1,
+    padding: 16,
+    paddingTop: 0,
+  },
+
   // Input field styles - expanded state
   expandedInput: {
     flex: 1,
     fontSize: 18,
-    minHeight: '100%',
+    color: '#fff',
     backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    padding: 12,
+    textAlignVertical: 'top',
+    minHeight: 200,
   },
 
   // Background styles for expanded state
   expandedBackground: {
+    flex: 1,
     borderRadius: 0,
-    paddingTop: 0,
   },
 
   // Check button styles
@@ -294,7 +401,7 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.5,
   },
-
+ 
   // CheckMark icon styles
   checkMarkContainer: {
     width: 40,
@@ -310,6 +417,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     fontWeight: 'bold',
+  },
+
+  // Add these missing styles
+  submitButton: {
+    backgroundColor: '#333', // Default color that will be overridden by dynamicStyles
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 8,
   },
 });
 

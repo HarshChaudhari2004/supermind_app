@@ -3,15 +3,18 @@
  */
 
 import React from 'react';
-import {AppRegistry} from 'react-native';
-import App from './App';
-import {name as appName} from './app.json';
+import { AppRegistry } from 'react-native';
+import ThemedApp from './components/ThemedApp';
+import { name as appName } from './app.json';
 import ErrorBoundary from './components/ErrorBoundary';
+import { SettingsProvider } from './context/SettingsContext';
 
-const AppWithErrorBoundary = () => (
+const AppWithProviders = () => (
   <ErrorBoundary>
-    <App />
+    <SettingsProvider>
+      <ThemedApp />
+    </SettingsProvider>
   </ErrorBoundary>
 );
 
-AppRegistry.registerComponent(appName, () => AppWithErrorBoundary);
+AppRegistry.registerComponent(appName, () => AppWithProviders);

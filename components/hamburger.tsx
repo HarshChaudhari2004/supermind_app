@@ -9,14 +9,17 @@ import {
   Text,
   StyleSheet,
   BackHandler,
+  Linking,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import LinearGradient from 'react-native-linear-gradient';
+import Settings from './settings'; // Add this import
 
 export default function Hamburger() {
   const [visible, setVisible] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const slideAnim = useRef(new Animated.Value(-250)).current;
+  const [settingsVisible, setSettingsVisible] = useState(false); // Add this state
 
   useEffect(() => {
     getUserEmail();
@@ -55,13 +58,25 @@ export default function Hamburger() {
     closeMenu();
   }
 
+  // Add this function to open settings
+  const openSettings = () => {
+    closeMenu();
+    setSettingsVisible(true);
+  };
+
   const menuItems = [
-    { icon: 'settings', label: 'Settings', onPress: () => {} },
+    { icon: 'settings', label: 'Settings', onPress: openSettings }, // Update this to use openSettings
     { icon: 'folder', label: 'My Collections', onPress: () => {} },
     { icon: 'star', label: 'Favorites', onPress: () => {} },
     { icon: 'history', label: 'History', onPress: () => {} },
     { icon: 'share', label: 'Share App', onPress: () => {} },
-    { icon: 'help', label: 'Help & Support', onPress: () => {} },
+    { 
+      icon: 'help', 
+      label: 'Help & Support', 
+      onPress: () => {
+        Linking.openURL('https://docs.google.com/forms/d/e/1FAIpQLSfLQJiHDziHBBB3StpyJyQHPJlc99drAd9InBkeAgkLeP0whg/viewform?usp=sharing');
+      } 
+    },
   ];
 
   useEffect(() => {
@@ -134,6 +149,12 @@ export default function Hamburger() {
           </View>
         </Animated.View>
       </Modal>
+
+      {/* Add the Settings component */}
+      <Settings 
+        visible={settingsVisible} 
+        onClose={() => setSettingsVisible(false)} 
+      />
     </>
   );
 }

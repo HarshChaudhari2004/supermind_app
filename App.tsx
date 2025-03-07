@@ -12,6 +12,7 @@ import ShareMenu from 'react-native-share-menu';
 import { processSharedContent, sendUrlToBackend } from './services/api';
 import { urlProcessingEmitter } from './services/EventEmitter';
 import { performSmartSearch } from './components/searchbar';
+import { useSettings } from './context/SettingsContext'; // Add this import
 
 const App = () => {
   // 1. Move all hooks outside any conditions
@@ -24,8 +25,7 @@ const App = () => {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const cardsRef = useRef<{ clearSearch: () => void }>(null);
-  const colorScheme = useColorScheme();
-  const backgroundColor = colorScheme === 'dark' ? '#171717' : '#fff';
+  const { appTheme } = useSettings(); // Get the theme from our settings context
 
   const handleRefresh = useCallback(() => {
     setReloadKey(prev => prev + 1);
@@ -179,8 +179,11 @@ const App = () => {
 
   // 6. Wrap main render in SafeAreaView and add error boundaries
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor }}>
-      <View style={{ flex: 1 }}>
+    <SafeAreaView style={{ 
+      flex: 1, 
+      backgroundColor: appTheme.colors.background // Update SafeAreaView to use theme values
+    }}>
+      <View style={{ flex: 1, position: 'relative' }}> {/* Add position:relative to make the absolute positioning work */}
         {!session ? (
           <Auth />
         ) : (
@@ -193,7 +196,9 @@ const App = () => {
             />
             <View style={{ 
               flex: 1, 
-              marginBottom: !isSearchFocused && !searchTerm ? 110 : 0 // Increased margin to prevent overlap
+              backgroundColor: appTheme.colors.background, // Update View to use theme values
+              marginBottom: !isSearchFocused && !searchTerm ? 100 : 0, // Only add bottom margin when ThoughtField is visible and collapsed
+              position: 'relative', // Add position:relative here
             }}>
               {session?.user?.id && (
                 <Cards 
@@ -206,10 +211,9 @@ const App = () => {
                 />
               )}
             </View>
+            {/* Only render ThoughtField when needed */}
             {!isSearchFocused && !searchTerm && (
-              <ThoughtField 
-                onRefresh={handleRefresh}
-              />
+              <ThoughtField onRefresh={handleRefresh} />
             )}
           </>
         )}
