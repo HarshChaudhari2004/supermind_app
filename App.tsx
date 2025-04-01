@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, useColorScheme, BackHandler, Alert, AppState, AppStateStatus, SafeAreaView } from 'react-native';
+import { View, useColorScheme, BackHandler, Alert, AppState, AppStateStatus, SafeAreaView, Platform, NativeModules, Linking } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import Auth from './components/auth';
@@ -13,6 +14,26 @@ import { processSharedContent, sendUrlToBackend } from './services/api';
 import { urlProcessingEmitter } from './services/EventEmitter';
 import { performSmartSearch } from './components/searchbar';
 import { useSettings } from './context/SettingsContext'; // Add this import
+
+// Add frame rate configuration
+if (Platform.OS === 'android') {
+  const { UIManager } = require('react-native');
+  try {
+    // Try to set 90fps first
+    if (UIManager.setDisplayRefreshRate) {
+      UIManager.setDisplayRefreshRate(90);
+    }
+  } catch (error) {
+    // If 90fps fails, it will automatically fall back to 60fps
+    console.log('Device does not support 90fps, using default refresh rate');
+  }
+}
+
+// Add type for share data
+interface ShareData {
+  data: string | string[];
+  mimeType?: string;
+}
 
 const App = () => {
   // 1. Move all hooks outside any conditions
@@ -88,7 +109,7 @@ const App = () => {
 
   // Splash screen timer
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 2000);
+    const timer = setTimeout(() => setIsLoading(false), 4000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -122,29 +143,86 @@ const App = () => {
     setReloadKey((prev) => prev + 1);
   }, []);
 
-  // 3. Safe event handler registration
-  const handleSharedContent = useCallback(async (shareData: any) => {
-    if (!shareData?.data || !session?.user) return;
-    
+  // Handle shared content
+  const handleSharedContent = useCallback(async (content: string) => {
     try {
-      const content = Array.isArray(shareData.data) ? shareData.data[0] : shareData.data;
+      // Get current session without requiring UI
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.user) {
+        // Store the content for later processing when user logs in
+        await AsyncStorage.setItem('pending_share', content);
+        return;
+      }
+      
       await processSharedContent(content);
       setReloadKey(prev => prev + 1);
       Alert.alert('Success', 'Content saved successfully');
     } catch (error) {
-      handleAPIError(error instanceof Error ? error : new Error('Failed to process content'));
+      console.error('Error processing shared content:', error);
+      Alert.alert('Error', 'Failed to process content. Please try again.');
     }
-  }, [session, handleAPIError]);
+  }, []);
 
-  // 4. Wrap ShareMenu initialization in try-catch
+  // Initialize share menu and handle deep linking
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
+    const initializeShareMenu = async () => {
+      try {
+        // Handle initial share
+        ShareMenu.getInitialShare(async (share) => {
+          if (share?.data) {
+            const content = Array.isArray(share.data) ? share.data[0] : share.data;
+            await handleSharedContent(content);
+          }
+        });
+
+        // Handle deep linking
+        const url = await Linking.getInitialURL();
+        if (url) {
+          await handleSharedContent(url);
+        }
+
+        // Check for pending shares
+        const pendingShare = await AsyncStorage.getItem('pending_share');
+        if (pendingShare) {
+          await handleSharedContent(pendingShare);
+          await AsyncStorage.removeItem('pending_share');
+        }
+      } catch (error) {
+        console.error('Error processing initial share:', error);
+      }
+    };
+
+    initializeShareMenu();
+  }, [handleSharedContent]);
+
+  // Handle app state changes and new shares
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (appState !== 'active' && nextAppState === 'active') {
         try {
-          // ShareMenu.getInitialShare returns Promise<void>
-          ShareMenu.getInitialShare(handleSharedContent);
+          // Check for new shares
+          ShareMenu.getInitialShare(async (share) => {
+            if (share?.data) {
+              const content = Array.isArray(share.data) ? share.data[0] : share.data;
+              await handleSharedContent(content);
+            }
+          });
+
+          // Check for deep links
+          const url = await Linking.getInitialURL();
+          if (url) {
+            await handleSharedContent(url);
+          }
+
+          // Check for pending shares
+          const pendingShare = await AsyncStorage.getItem('pending_share');
+          if (pendingShare) {
+            await handleSharedContent(pendingShare);
+            await AsyncStorage.removeItem('pending_share');
+          }
         } catch (error) {
-          console.error('ShareMenu initialization error:', error);
+          console.error('Error processing share on app state change:', error);
         }
       }
       setAppState(nextAppState);

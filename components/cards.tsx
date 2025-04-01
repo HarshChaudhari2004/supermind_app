@@ -385,8 +385,8 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   };
 
   // Fix the loading condition to show skeleton during initial load
-  if (isLoading) {
-    return <CardSkeleton />;  // Use CardSkeleton instead of loading text
+  if (isLoading || !cardsData.length) {
+    return <CardSkeleton numColumns={cardView === 'list' ? 1 : 2} />;  // Use CardSkeleton instead of loading text
   }
 
   // Update the error state display
@@ -402,8 +402,8 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     );
   }
 
-  // Only show "No items found" when we're done loading AND have no items
-  if (!isLoading && (!filteredData || filteredData.length === 0)) {
+  // Only show "No items found" when we're done loading AND have no items AND not searching
+  if (!isLoading && (!filteredData || filteredData.length === 0) && !searchTerm) {
     return (
       <View style={styles.errorContainer}>
         <Text style={[styles.errorText, { color: '#fff' }]}>No items found</Text>

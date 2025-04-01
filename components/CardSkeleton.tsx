@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Animated, Dimensions, Easing } from 'react-native';
 import MasonryList from '@react-native-seoul/masonry-list';
 
 interface CardSkeletonProps {
@@ -23,26 +23,22 @@ const BASE_HEIGHTS = {
 };
 
 const SkeletonCard = () => {
-  const animatedValue = new Animated.Value(0);
-
-  // Generate random but consistent dimensions for each card
-  const aspectRatio = ASPECT_RATIOS[Math.floor(Math.random() * ASPECT_RATIOS.length)];
-  const baseHeight = Object.values(BASE_HEIGHTS)[Math.floor(Math.random() * 3)];
-  const width = '100%';
-  const height = baseHeight;
+  const animatedValue = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const pulseAnimation = Animated.loop(
       Animated.sequence([
         Animated.timing(animatedValue, {
           toValue: 1,
-          duration: 1000,
+          duration: 1500,
           useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
         }),
         Animated.timing(animatedValue, {
           toValue: 0,
-          duration: 1000,
+          duration: 1500,
           useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
         }),
       ])
     );
@@ -55,9 +51,15 @@ const SkeletonCard = () => {
   }, []);
 
   const opacity = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 0.7],
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.3, 0.7, 0.3],
   });
+
+  // Generate random but consistent dimensions for each card
+  const aspectRatio = ASPECT_RATIOS[Math.floor(Math.random() * ASPECT_RATIOS.length)];
+  const baseHeight = Object.values(BASE_HEIGHTS)[Math.floor(Math.random() * 3)];
+  const width = '100%';
+  const height = baseHeight;
 
   return (
     <View style={styles.card}>
@@ -67,32 +69,50 @@ const SkeletonCard = () => {
           { 
             opacity,
             height,
-            aspectRatio
+            aspectRatio,
+            backgroundColor: '#3a3a3a',
+            borderRadius: 10,
           }
         ]} 
       />
-      <Animated.View 
-        style={[
-          styles.titleBar, 
-          { opacity }
-        ]} 
-      />
-      <Animated.View 
-        style={[
-          styles.titleBarSmall, 
-          { 
-            opacity,
-            width: `${Math.random() * 40 + 40}%` // Random width between 40-80%
-          }
-        ]} 
-      />
+      <View style={styles.contentContainer}>
+        <Animated.View 
+          style={[
+            styles.titleBar, 
+            { 
+              opacity,
+              backgroundColor: '#3a3a3a',
+              borderRadius: 4,
+              marginTop: 10,
+              marginHorizontal: 5,
+              height: 15,
+              width: '80%'
+            }
+          ]} 
+        />
+        <Animated.View 
+          style={[
+            styles.titleBarSmall, 
+            { 
+              opacity,
+              backgroundColor: '#3a3a3a',
+              borderRadius: 4,
+              marginTop: 5,
+              marginHorizontal: 5,
+              marginBottom: 10,
+              height: 12,
+              width: `${Math.random() * 40 + 40}%` // Random width between 40-80%
+            }
+          ]} 
+        />
+      </View>
     </View>
   );
 };
 
 const CardSkeleton: React.FC<CardSkeletonProps> = ({ numColumns = 2 }) => {
   // Generate skeleton items with stable keys
-  const skeletonData = Array.from({ length: 8 }, (_, index) => ({
+  const skeletonData = Array.from({ length: 6 }, (_, index) => ({
     id: index,
     key: `skeleton-${index}`
   }));
@@ -124,6 +144,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#3a3a3a',
     borderRadius: 10,
   },
+  contentContainer: {
+    padding: 5,
+  },
   titleBar: {
     height: 15,
     backgroundColor: '#3a3a3a',
@@ -132,7 +155,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
   },
   titleBarSmall: {
-    height: 15,
+    height: 12,
     backgroundColor: '#3a3a3a',
     borderRadius: 4,
     marginTop: 5,

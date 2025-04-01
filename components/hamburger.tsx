@@ -10,6 +10,7 @@ import {
   StyleSheet,
   BackHandler,
   Linking,
+  Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import LinearGradient from 'react-native-linear-gradient';
@@ -79,19 +80,30 @@ export default function Hamburger() {
     },
   ];
 
+  // Enhanced back button handler with animation
   useEffect(() => {
-    const backAction = () => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       if (visible) {
-        closeMenu();
+        // Add haptic feedback if available
+        if (Platform.OS === 'android') {
+          const HapticFeedback = require('react-native').HapticFeedback;
+          HapticFeedback.trigger('impactLight');
+        }
+        
+        // Animate menu closing
+        Animated.timing(slideAnim, {
+          toValue: -250,
+          duration: 300,
+          easing: Easing.ease,
+          useNativeDriver: false,
+        }).start(() => {
+          setVisible(false);
+        });
+        
         return true;
       }
       return false;
-    };
-
-    const backHandler = BackHandler.addEventListener(
-      'hardwareBackPress',
-      backAction
-    );
+    });
 
     return () => backHandler.remove();
   }, [visible]);

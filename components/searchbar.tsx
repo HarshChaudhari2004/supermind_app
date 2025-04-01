@@ -52,16 +52,31 @@ export const performSmartSearch = async (query: string): Promise<SearchResult[]>
       return recentData || [];
     }
 
-    // Call the search_content function for non-empty queries
+    // Use the new hybrid search function for non-empty queries
     const { data, error } = await supabase
       .rpc('search_content', {
-        search_query: query.toLowerCase()
-      })
-      .eq('user_id', user.id);
+        search_query: query,
+        user_id_input: user.id,
+        similarity_threshold: 0.1,
+        max_results: 50
+      });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Search error:', error);
+      // Fallback to basic search if hybrid search fails
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('content')
+        .select('*')
+        .eq('user_id', user.id)
+        .or(`title.ilike.%${query}%,summary.ilike.%${query}%,tags.ilike.%${query}%,channel_name.ilike.%${query}%,user_notes.ilike.%${query}%`)
+        .order('date_added', { ascending: false })
+        .limit(50);
+
+      if (fallbackError) throw fallbackError;
+      return fallbackData || [];
+    }
+
     return data || [];
-
   } catch (error) {
     console.error('Search error:', error);
     throw error;
@@ -174,6 +189,28 @@ const SearchBar: React.FC<SearchBarProps> = ({
 
     return () => backHandler.remove();
   }, [onFocusChange]);
+
+  // Add back button handler for modals
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (plusMenuVisible) {
+        setPlusMenuVisible(false);
+        return true;
+      }
+      if (addCardVisible) {
+        setAddCardVisible(false);
+        return true;
+      }
+      if (inputRef.current?.isFocused()) {
+        inputRef.current?.blur();
+        onFocusChange?.(false);
+        return true;
+      }
+      return false;
+    });
+
+    return () => backHandler.remove();
+  }, [plusMenuVisible, addCardVisible, onFocusChange]);
 
   // Update handleFocus and handleBlur
   const handleFocus = () => {

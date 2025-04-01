@@ -70,19 +70,22 @@ const Settings: React.FC<SettingsProps> = ({ visible, onClose }) => {
     appTheme,
   } = useSettings();
 
-  // Add BackHandler for Android
+  // Enhanced back button handler
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (visible) {
-          onClose();
-          return true;
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (visible) {
+        // Add haptic feedback if available
+        if (Platform.OS === 'android') {
+          const HapticFeedback = require('react-native').HapticFeedback;
+          HapticFeedback.trigger('impactLight');
         }
-        return false;
-      });
+        onClose();
+        return true;
+      }
+      return false;
+    });
 
-      return () => backHandler.remove();
-    }
+    return () => backHandler.remove();
   }, [visible, onClose]);
 
   // Destructure theme values for easier access
