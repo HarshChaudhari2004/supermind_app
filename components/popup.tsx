@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -8,12 +8,41 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Linking,
+  Linking,  
+  Dimensions,
 } from 'react-native';
+import Animated, { 
+  withTiming,
+  withSpring,
+  withDelay,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  useDerivedValue,
+  interpolate,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import WebView from 'react-native-webview';
 import { saveUserNotes } from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import ThemedText from './ThemedText';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Animation tuning constants (easy to tweak)
+const ANIM = {
+  // OnePlus/iOS-like fluid bezier: "pop" at start (fast acceleration) + long elegant settling
+  fluidEasing: Easing.bezier(0.05, 0.7, 0.1, 1), // Sharp pop at start, very long smooth settling
+  duration: 480,             // ms for liquid feel (dynamic duration for full screen)
+  exitDuration: 320,         // ms for exit transform
+  contentDelay: 250,         // ms before mounting heavy content (WebView)
+  backdropDuration: 350,     // ms for backdrop fade
+   enterOpacityDuration: 450, // ms for popup fade-in (match duration for smoothness)
+  exitOpacityDuration: 350,  // ms for popup fade-out (MUST match exitDuration to prevent midway disappearing)
+  exitEasing: Easing.bezier(0.3, 0, 0.8, 0.15), // Fast snappy exit with slight ease
+};
+
 
 // Update the interface first to match Supabase data structure
 interface PopupProps {
@@ -31,6 +60,7 @@ interface PopupProps {
     video_type?: string;
     // Add other fields as needed
   } | null;
+  cardLayout?: {x: number, y: number, width: number, height: number} | null;
   onClose: () => void;
   onSaveNote: (note: string) => void;
   onDelete: () => Promise<void>;
@@ -41,6 +71,7 @@ interface PopupProps {
 const Popup: React.FC<PopupProps> = ({
   visible,
   item,
+  cardLayout,
   onClose,
   onSaveNote,
   onDelete,
@@ -61,6 +92,160 @@ const Popup: React.FC<PopupProps> = ({
   // Add this to get theme settings
   const { appTheme, fontSize } = useSettings();
   const { colors } = appTheme;
+
+  // Animation shared values for smooth popup transitions
+  const scale = useSharedValue(0);
+  const opacity = useSharedValue(0);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const borderRadius = useSharedValue(20);
+  const contentOpacity = useSharedValue(0); // cross-fade for heavy content
+  const webViewOpacity = useSharedValue(0); // separate opacity for WebView fade-in
+  const initialScale = useSharedValue(0.3); // Store initial scale for backdrop interpolation
+  const [showWebView, setShowWebView] = useState(false);
+  // store timer reference (type is any to avoid Node/Browser timer mismatch)
+  const contentTimerRef = useRef<any>(null);
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Calculate initial position from card layout
+  const getInitialTransform = () => {
+    if (!cardLayout) return { x: 0, y: 0, scale: 0.3 };
+    
+    // Calculate the offset from center of screen to card center
+    const cardCenterX = cardLayout.x + (cardLayout.width / 2);
+    const cardCenterY = cardLayout.y + (cardLayout.height / 2);
+    const screenCenterX = SCREEN_WIDTH / 2;
+    const screenCenterY = SCREEN_HEIGHT / 2;
+    
+    return {
+      x: cardCenterX - screenCenterX,
+      y: cardCenterY - screenCenterY,
+      scale: Math.min(cardLayout.width / SCREEN_WIDTH, cardLayout.height / SCREEN_HEIGHT)
+    };
+  };
+
+  // Animated style for smooth popup entrance/exit
+  const animatedPopupStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { scale: scale.value }
+      ],
+      opacity: opacity.value,
+      borderRadius: borderRadius.value,
+      // hardware acceleration hint
+      backfaceVisibility: 'hidden' as const,
+    };
+  });
+
+  // Derive backdrop opacity from scale for synchronized animation
+  const backdropOpacity = useDerivedValue(() => {
+    return interpolate(scale.value, [initialScale.value, 1], [0, 1]);
+  });
+
+  // Animated style for backdrop fade
+  const animatedBackdropStyle = useAnimatedStyle(() => {
+    return {
+      opacity: backdropOpacity.value,
+    };
+  });
+
+  // Animated style for content cross-fade
+  const contentAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+  }));
+
+  // Animated style for WebView fade-in
+  const webViewAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: webViewOpacity.value,
+  }));
+
+  // Animated style for thumbnail fade-out (inverse of WebView opacity)
+  const thumbnailAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: 1 - webViewOpacity.value,
+  }));
+
+  // Memoized dynamic styles to avoid re-creating on every render (MUST be before early return)
+  const dynamicStyles = useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+  }), [colors]);
+
+  // Gesture handler for interactive dismiss via top handle (new Gesture API)
+  // Configure to only activate on downward drag, ignore horizontal movement
+  const panGesture = Gesture.Pan()
+    .enabled(!isClosing)
+    .activeOffsetY(10) // Must drag down at least 10px to activate
+    .failOffsetY(-5)   // If dragged up 5px, gesture fails
+    .failOffsetX([-50, 50]) // If dragged left/right more than 50px, gesture fails (keeps vertical)
+    .onBegin(() => {
+      'worklet';
+      // Gesture starting
+    })
+    .onUpdate((event) => {
+      'worklet';
+      // Only allow downward drag
+      if (event.translationY > 0) {
+        translateY.value = event.translationY;
+        // subtle scale down while dragging (backdrop will follow via useDerivedValue)
+        scale.value = 1 - Math.min(event.translationY / SCREEN_HEIGHT, 0.08);
+      }
+    })
+    .onEnd((event) => {
+      'worklet';
+      // Check if dragged far enough or fast enough to dismiss
+      if (event.translationY > 150 || event.velocityY > 1200) {
+        // trigger close
+        runOnJS(handleClose)();
+      } else {
+        // Spring back to position (backdrop follows scale via useDerivedValue)
+        translateY.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
+        scale.value = withTiming(1, { duration: 250, easing: Easing.out(Easing.cubic) });
+      }
+    });
+
+  // Trigger entrance animation when popup becomes visible
+  useEffect(() => {
+    if (visible && !isClosing) {
+      const initial = getInitialTransform();
+      
+      // Set initial values instantly (including initialScale for backdrop interpolation)
+      scale.value = initial.scale;
+      initialScale.value = initial.scale; // Update shared value for backdrop
+      translateX.value = initial.x;
+      translateY.value = initial.y;
+      opacity.value = 0;
+      borderRadius.value = 20;
+
+      // Premium spring config for fluid "snap" feel (OnePlus/iOS-like)
+      const springConfig = { 
+        damping: 18, 
+        stiffness: 120, 
+        mass: 0.8, 
+        overshootClamping: false 
+      };
+
+      // Transform with spring physics for organic feel
+      scale.value = withSpring(1, springConfig);
+      translateX.value = withSpring(0, springConfig);
+      translateY.value = withSpring(0, springConfig);
+      borderRadius.value = withTiming(0, { duration: ANIM.duration, easing: ANIM.fluidEasing });
+      opacity.value = withTiming(1, { duration: ANIM.enterOpacityDuration, easing: ANIM.fluidEasing });
+
+      // WebView mounts immediately (pre-mounted strategy) but stays invisible
+      // It will fade in via onLoadEnd callback once content is ready
+      contentOpacity.value = withTiming(1, { duration: 300 });
+
+      // Clear any existing timer
+      if (contentTimerRef.current) {
+        clearTimeout(contentTimerRef.current);
+        contentTimerRef.current = null;
+      }
+    }
+  }, [visible, cardLayout]);
 
   // Reset states when popup closes
   useEffect(() => {
@@ -84,11 +269,56 @@ const Popup: React.FC<PopupProps> = ({
     }
   }, [item]);
 
+  // Cleanup content timer on unmount
+  useEffect(() => {
+    return () => {
+      if (contentTimerRef.current) {
+        clearTimeout(contentTimerRef.current);
+        contentTimerRef.current = null;
+      }
+    };
+  }, []);
+
   if (!item || !visible) return null;
+
+  // Close handler with proper exit animation
+  const handleClose = () => {
+    setIsClosing(true);
+    const initial = getInitialTransform();
+
+    // Reset opacity values immediately
+    contentOpacity.value = 0;
+    webViewOpacity.value = 0;
+
+    // Premium exit spring config - snaps back organically without bounce
+    const exitSpringConfig = { damping: 25, stiffness: 150 };
+    const exitTimingConfig = { duration: ANIM.exitDuration, easing: ANIM.exitEasing };
+
+    // Transform back to card position with spring for organic feel (backdrop will follow via useDerivedValue)
+    scale.value = withSpring(initial.scale, exitSpringConfig);
+    translateX.value = withSpring(initial.x, exitSpringConfig);
+    translateY.value = withSpring(initial.y, exitSpringConfig);
+    borderRadius.value = withTiming(20, exitTimingConfig);
+    
+    // Fade out opacity smoothly
+    opacity.value = withTiming(0, exitTimingConfig, (finished) => {
+      if (finished) {
+        // Call onClose only after ALL animations complete
+        runOnJS(onClose)();
+        runOnJS(setIsClosing)(false);
+      }
+    });
+  };
 
   // Helper to display partial text
   const shortenedText = (text: string, limit: number) =>
     text?.length > limit ? text.slice(0, limit) + '...' : text || '';
+
+  // WebView load handler - fade in once content is ready
+  const handleWebViewLoad = () => {
+    'worklet';
+    webViewOpacity.value = withTiming(1, { duration: 300 });
+  };
 
   // Parse tags - handle both comma-separated string and array formats
   const parseTags = (tags: string | string[] | null | undefined) => {
@@ -241,6 +471,8 @@ const Popup: React.FC<PopupProps> = ({
               javaScriptEnabled
               domStorageEnabled
               scrollEnabled
+              // Ensure WebView content background is transparent to avoid flashes
+              // injectedJavaScript={`document.body.style.background = 'transparent'; true;`}
             />
             <TouchableOpacity 
               style={styles.visitButton}
@@ -322,29 +554,114 @@ const Popup: React.FC<PopupProps> = ({
   };
 
   // Update the styles to use theme colors
-  const dynamicStyles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    // ...add more styles as needed
-  });
+  // const dynamicStyles = StyleSheet.create({
+  //   container: {
+  //     flex: 1,
+  //     backgroundColor: colors.background,
+  //   },
+  //   // ...add more styles as needed
+  // });
+  // Add a small top handle style in styles object below (defined as new style key 'handle')
 
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
+      animationType="none"
+      transparent={true}
+      onRequestClose={handleClose}
+      statusBarTranslucent
     >
-      <View style={dynamicStyles.container}>
-        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-          <Text style={styles.closeText}>×</Text>
-        </TouchableOpacity>
+      <View style={{ flex: 1 }}>
+        {/* Backdrop (separate from popup so children don't inherit opacity) */}
+        <Animated.View
+          style={[styles.backdrop, animatedBackdropStyle]}
+          pointerEvents={isClosing ? 'none' : 'auto'}
+        />
 
-        <ScrollView contentContainerStyle={styles.content}>
-          {renderNoteContent()}
+        {/* Container positions popup at bottom for accessible drag handle */}
+        <View style={styles.modalOverlay} pointerEvents="box-none">
+          <GestureDetector gesture={panGesture}>
+            <Animated.View 
+              style={[styles.modalContent, animatedPopupStyle]}
+              renderToHardwareTextureAndroid={!showWebView}
+            >
+              <View style={dynamicStyles.container}>
+                {/* Drag handle for interactive dismiss */}
+                <View style={styles.handle} />
 
+                <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+                  <Text style={styles.closeText}>×</Text>
+                </TouchableOpacity>
+
+                <ScrollView contentContainerStyle={styles.content}>
+                  {/* WebView Section with Pre-mounted Parallel Loading Strategy */}
+                  {item?.video_type !== 'note' && item.original_url && (
+                    <View style={{ minHeight: 500, marginBottom: 20, position: 'relative' }}>
+                      {/* Thumbnail Placeholder - visible until WebView loads */}
+                      <Animated.View 
+                        style={[
+                          { 
+                            position: 'absolute',
+                            width: '100%',
+                            height: 500,
+                            borderRadius: 12,
+                            overflow: 'hidden',
+                            backgroundColor: colors.background,
+                          },
+                          contentAnimatedStyle,
+                          thumbnailAnimatedStyle,
+                        ]}
+                      >
+                        {item.thumbnail_url ? (
+                          <Animated.Image
+                            source={{ uri: item.thumbnail_url }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              resizeMode: 'cover',
+                            }}
+                            blurRadius={4}
+                          />
+                        ) : null}
+                      </Animated.View>
+                      
+                      {/* Pre-mounted WebView - loads immediately but invisible until ready */}
+                      <Animated.View style={[{ width: '100%', height: 500 }, contentAnimatedStyle]}>
+                        <Animated.View style={[{ flex: 1 }, webViewAnimatedStyle]}>
+                          <WebView
+                            source={{ uri: item.original_url }}
+                            nestedScrollEnabled
+                            style={[styles.webview, { backgroundColor: colors.background }]}
+                            containerStyle={{ backgroundColor: colors.background }}
+                            javaScriptEnabled
+                            domStorageEnabled
+                            scrollEnabled
+                            androidLayerType="hardware"
+                            incognito={true}
+                            onLoadEnd={handleWebViewLoad}
+                            injectedJavaScript={`
+                              (function() {
+                                const bgColor = '${colors.background}';
+                                if (!document.body.style.backgroundColor || document.body.style.backgroundColor === 'transparent') {
+                                  document.body.style.backgroundColor = bgColor;
+                                }
+                                document.documentElement.style.backgroundColor = bgColor;
+                              })();
+                              true;
+                            `}
+                          />
+                        </Animated.View>
+                        <TouchableOpacity 
+                          style={styles.visitButton}
+                          onPress={() => handleVisit(item.original_url)}
+                        >
+                          <Text style={styles.visitButtonText}>Visit</Text>
+                        </TouchableOpacity>
+                      </Animated.View>
+                    </View>
+                  )}
+
+                  {/* Title Section */}
           <View style={styles.section}>
             <ThemedText style={styles.sectionTitle} variant="heading">Title:</ThemedText>
             <TouchableOpacity onPress={() => setShowFullTitle(!showFullTitle)}>
@@ -416,11 +733,22 @@ const Popup: React.FC<PopupProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+    </Animated.View>
+    </GestureDetector>
+  </View>
+</View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+
+  modalContent: {
+    width: '100%',
+    height: '95%',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
   container: {
     flex: 1,
     backgroundColor: '#1a1a1a',
@@ -430,6 +758,32 @@ const styles = StyleSheet.create({
   },
   webview: {
     borderRadius: 8,
+     // backgroundColor: 'transparent', // avoid white flash behind webview during animations
+    flex: 1,
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)'
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end', // Position at bottom for accessible drag handle
+    alignItems: 'center',
+    paddingBottom: 0, // Stick to very bottom
+  },
+  handle: {
+    width: 40,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#555',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+    opacity: 0.6,
   },
   section: {
     marginTop: 20,

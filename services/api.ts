@@ -1,12 +1,20 @@
 import { supabase } from '../lib/supabase';
 import { YoutubeTranscript } from 'youtube-transcript';
-// const BASE_URL = __DEV__ 
-//   ? 'https://tragic-christal-supermind-b64b5075.koyeb.app'  // Local development
-//   : 'http://192.168.0.104:8000'; // Production
+import { Platform } from 'react-native';
 
-const BASE_URL = __DEV__ 
-  ? 'http://192.168.0.104:8000'  // Local development
-  : 'https://crazymind-production.up.railway.app'; // Production
+// For physical Android device on same WiFi network
+// Try ADB reverse first, then WiFi IP as fallback
+const POSSIBLE_BASE_URLS = __DEV__ 
+  ? [
+      'http://localhost:8000',        // ADB reverse first (most reliable)
+      'http://192.168.0.111:8000',    // WiFi IP fallback
+      'http://10.0.2.2:8000',         // Android emulator fallback
+      'http://0.0.0.0:8000'           // Direct bind address
+    ]
+  : ['https://crazymind.up.railway.app']; // Production
+
+// We'll try each URL until one works
+let BASE_URL = POSSIBLE_BASE_URLS[0];
 // Add this helper function at the top
 function generateSmartTitle(text: string): string {
   // First try to get the first sentence
@@ -22,6 +30,78 @@ function generateSmartTitle(text: string): string {
   }
   
   return firstSentence;
+}
+
+console.log('🔗 Trying BASE_URLs:', POSSIBLE_BASE_URLS);
+console.log('📱 Platform:', Platform.OS);
+console.log('🔧 Dev mode:', __DEV__);
+
+// Function to test if a URL is accessible
+async function testConnection(url: string): Promise<boolean> {
+  try {
+    console.log(`🔍 Testing connection to: ${url}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased to 10 seconds
+    
+    // First try a simple fetch to the root
+    const response = await fetch(`${url}/api/test/`, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    clearTimeout(timeoutId);
+    console.log(`✅ ${url} responded with status:`, response.status);
+    return response.ok;
+  } catch (error) {
+    console.log(`❌ ${url} failed:`, error instanceof Error ? error.message : String(error));
+    // Try a simpler endpoint
+    try {
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 5000);
+      
+      const response2 = await fetch(`${url}/`, {
+        method: 'GET',
+        signal: controller2.signal,
+      });
+      
+      clearTimeout(timeoutId2);
+      console.log(`✅ ${url} root endpoint responded with status:`, response2.status);
+      return response2.ok;
+    } catch (error2) {
+      console.log(`❌ ${url} root endpoint also failed:`, error2 instanceof Error ? error2.message : String(error2));
+      return false;
+    }
+  }
+}
+
+// Function to find the working BASE_URL
+async function findWorkingBaseUrl(): Promise<string> {
+  for (const url of POSSIBLE_BASE_URLS) {
+    console.log(`🔍 Testing connection to: ${url}`);
+    const isWorking = await testConnection(url);
+    if (isWorking) {
+      console.log(`✅ Found working URL: ${url}`);
+      BASE_URL = url;
+      return url;
+    }
+  }
+  console.log('❌ No working URL found, using first as fallback');
+  BASE_URL = POSSIBLE_BASE_URLS[0];
+  return BASE_URL;
+}
+
+// Initialize the BASE_URL on first import
+let isInitialized = false;
+async function ensureBaseUrl() {
+  if (!isInitialized && __DEV__) {
+    await findWorkingBaseUrl();
+    isInitialized = true;
+  }
+  return BASE_URL;
 }
 
 // Helper functions to check URL type
@@ -87,23 +167,38 @@ async function getCurrentUserId() {
 // Modified getCsrfToken function
 async function getCsrfToken() {
   try {
+    // Ensure we have a working BASE_URL
+    const workingBaseUrl = await ensureBaseUrl();
+    console.log(`🔑 Getting CSRF token from: ${workingBaseUrl}`);
+    
     // Add token fallback - if we can't get a CSRF token, use a null token
     // Many Django configurations will accept null CSRF for simple GET requests
     try {
-      const response = await fetch(`${BASE_URL}/get-csrf-token/`, {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      
+      const response = await fetch(`${workingBaseUrl}/web/get-csrf-token/`, {
+        method: 'GET',
+        signal: controller.signal,
         credentials: 'include', // Important for CSRF
-        headers: await getAuthHeader() // Try with auth headers
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }
       });
       
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        console.warn('Failed to get CSRF token, falling back to null token');
+        console.warn(`CSRF token request failed with status: ${response.status}`);
         return null;
       }
       
       const data = await response.json();
+      console.log('✅ CSRF token retrieved successfully');
       return data.csrfToken;
     } catch (error) {
-      console.warn('Error getting CSRF token, falling back to null token:', error);
+      console.warn('Error getting CSRF token, falling back to null token:', error instanceof Error ? error.message : String(error));
       return null;
     }
   } catch (error) {
@@ -162,6 +257,9 @@ async function getYouTubeTranscript(videoId: string): Promise<string | null> {
 
 export const sendUrlToBackend = async (url: string) => {
   try {
+    // Ensure we have a working BASE_URL
+    const workingBaseUrl = await ensureBaseUrl();
+    
     const headers = await getAuthHeader();
     const userId = await getCurrentUserId();
     const csrfToken = await getCsrfToken();
@@ -214,7 +312,7 @@ export const sendUrlToBackend = async (url: string) => {
       endpoint = "/web/api/analyze-website/";
     }
 
-    const requestUrl = new URL(`${BASE_URL}${endpoint}`);
+    const requestUrl = new URL(`${workingBaseUrl}${endpoint}`);
     
     const requestHeaders = {
       ...headers,
@@ -268,17 +366,18 @@ export const sendUrlToBackend = async (url: string) => {
 };
 
 // Modify the getVideoData function
-export const getVideoData = async () => {
+export const getVideoData = async (offset: number = 0, limit: number = 50) => {
   try {
     const headers = await getAuthHeader();
     const userId = await getCurrentUserId();
     
-    // First try getting data from Supabase directly
+    // First try getting data from Supabase directly with pagination
     const { data: supabaseData, error } = await supabase
       .from('content')
       .select('*')
       .eq('user_id', userId)
-      .order('date_added', { ascending: false });
+      .order('date_added', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       throw error;
@@ -289,7 +388,7 @@ export const getVideoData = async () => {
     }
 
     // Fallback to backend API if needed
-    const response = await fetch(`${BASE_URL}/api/video-data/?user_id=${userId}`, { 
+    const response = await fetch(`${BASE_URL}/api/video-data/?user_id=${userId}&offset=${offset}&limit=${limit}`, { 
       headers 
     });
     

@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { SearchResult } from '../types';
 import CardSkeleton from './CardSkeleton';
 import { useSettings, SortType, CardViewType, CardDensityType, FontSizeType } from '../context/SettingsContext';
+import { cacheService } from '../services/cacheService';
 
 // Add interface for component props
 interface CardsProps {
@@ -14,6 +15,7 @@ interface CardsProps {
   userId?: string;
   onRefresh?: () => void;  // Add this prop
   performSearch: (query: string) => Promise<SearchResult[]>; // Add this
+  initialData?: any[] | null; // Add this prop
 }
 
 // In Cards.tsx ensure cardsRef is properly typed
@@ -25,18 +27,26 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   searchTerm, 
   userId, 
   onRefresh,
-  performSearch 
+  performSearch,
+  initialData 
 }, ref) => {
   // Consolidate all state hooks at the top
-  const [cardsData, setCardsData] = useState<any[]>([]);
-  const [filteredData, setFilteredData] = useState<any[]>([]);
+  const [cardsData, setCardsData] = useState<any[]>(initialData || []);
+  const [filteredData, setFilteredData] = useState<any[]>(initialData || []);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [cardLayout, setCardLayout] = useState<{x: number, y: number, width: number, height: number} | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [imageLoadStatus, setImageLoadStatus] = useState<{ [key: string]: boolean }>({});
   const [localData, setLocalData] = useState<SearchResult[]>([]);
+  
+  // Add pagination state
+  const [currentPage, setCurrentPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 50;
   
   // Get settings for card display - add new settings
   const { 
@@ -62,11 +72,8 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     clearSearch
   }), [clearSearch]); // Add proper dependency
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     try {
-      setIsLoading(true);
-      setError(null); // Reset error state
-      
       if (!userId) {
         console.log('No userId provided');
         setCardsData([]);
@@ -74,37 +81,109 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
         return;
       }
 
-      const data = await getVideoData();
-      
-      if (!data) {
-        console.log('No data received');
-        setCardsData([]);
-        setFilteredData([]);
+      setIsLoading(true);
+      setError(null);
+
+      // If we have initial data and not forcing refresh, use it directly
+      if (initialData && !forceRefresh) {
+        console.log('Using preloaded initial data');
+        const sortedData = sortCards(initialData, sortOrder);
+        setCardsData(sortedData);
+        setFilteredData(sortedData);
+        setIsLoading(false);
         return;
       }
 
-      if (!Array.isArray(data)) {
-        console.error('Invalid data format:', data);
-        setError('Invalid data format received');
-        setCardsData([]);
-        setFilteredData([]);
+      // Try getting data from cache first
+      const cachedData = await cacheService.getCache();
+      
+      // Use cache if available and not forcing refresh
+      if (cachedData && !forceRefresh) {
+        const sortedData = sortCards(cachedData, sortOrder);
+        setCardsData(sortedData);
+        setFilteredData(sortedData);
+        setIsLoading(false);
         return;
       }
+
+      // Only fetch from Supabase if no cache or force refresh
+      const data = await getVideoData(0, PAGE_SIZE);
+      
+      if (!data || !Array.isArray(data)) {
+        console.error('Invalid data format or no data received:', data);
+        // Keep using cached data if available
+        if (cachedData) {
+          const sortedData = sortCards(cachedData, sortOrder);
+          setCardsData(sortedData);
+          setFilteredData(sortedData);
+        } else {
+          setCardsData([]);
+          setFilteredData([]);
+        }
+        return;
+      }
+
+      // Check if there's more data available
+      setHasMore(data.length === PAGE_SIZE);
+      setCurrentPage(0);
+
+      // Cache the fresh data
+      await cacheService.setCache(data);
 
       // Apply sorting based on settings
       const sortedData = sortCards(data, sortOrder);
-      
       setCardsData(sortedData);
       setFilteredData(sortedData);
     } catch (err) {
       console.error('Error in fetchData:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
-      setCardsData([]);
-      setFilteredData([]);
+      // Try to use cached data on error
+      const cachedData = await cacheService.getCache();
+      if (cachedData) {
+        const sortedData = sortCards(cachedData, sortOrder);
+        setCardsData(sortedData);
+        setFilteredData(sortedData);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [userId, refreshKey, sortOrder]); // Add sortOrder dependency
+  }, [userId, sortOrder, initialData, PAGE_SIZE]);
+
+  // Add function to load more cards
+  const loadMoreCards = useCallback(async () => {
+    if (loadingMore || !hasMore || !userId) {
+      return;
+    }
+
+    try {
+      setLoadingMore(true);
+      const nextPage = currentPage + 1;
+      const offset = nextPage * PAGE_SIZE;
+
+      const newData = await getVideoData(offset, PAGE_SIZE);
+
+      if (newData && Array.isArray(newData) && newData.length > 0) {
+        setHasMore(newData.length === PAGE_SIZE);
+        setCurrentPage(nextPage);
+
+        // Merge new data with existing
+        const mergedData = [...cardsData, ...newData];
+        const sortedData = sortCards(mergedData, sortOrder);
+        setCardsData(sortedData);
+        setFilteredData(sortedData);
+
+        // Update cache with all data
+        await cacheService.setCache(sortedData);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Error loading more cards:', error);
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, userId, currentPage, cardsData, sortOrder, PAGE_SIZE]);
 
   // Add function to sort cards based on settings
   const sortCards = (data: any[], order: SortType) => {
@@ -277,7 +356,12 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
               backgroundColor: colors.surface
             }
           ]}
-          onPress={() => setSelectedItem(item)}
+          onPress={(event) => {
+            event.currentTarget.measure((x, y, width, height, pageX, pageY) => {
+              setCardLayout({ x: pageX, y: pageY, width, height });
+              setSelectedItem(item);
+            });
+          }}
         >
           <View style={styles.listCardContent}>
             {/* Left: Image */}
@@ -344,7 +428,12 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
           margin: cardMargin,
           backgroundColor: 'transparent'
         }]}
-        onPress={() => setSelectedItem(item)}
+        onPress={(event) => {
+          event.currentTarget.measure((x, y, width, height, pageX, pageY) => {
+            setCardLayout({ x: pageX, y: pageY, width, height });
+            setSelectedItem(item);
+          });
+        }}
       >
         <View>
           <Image
@@ -384,9 +473,9 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     );
   };
 
-  // Fix the loading condition to show skeleton during initial load
-  if (isLoading || !cardsData.length) {
-    return <CardSkeleton numColumns={cardView === 'list' ? 1 : 2} />;  // Use CardSkeleton instead of loading text
+  // Only show skeleton when loading and no data available
+  if (isLoading && cardsData.length === 0) {
+    return <CardSkeleton numColumns={cardView === 'list' ? 1 : 2} />;
   }
 
   // Update the error state display
@@ -414,7 +503,9 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
-      await fetchData();
+      await cacheService.clearCache(); // Clear cache on manual refresh
+      await fetchData(true); // Force fetch from Supabase
+      if (onRefresh) onRefresh();
     } catch (error) {
       console.error('Refresh error:', error);
     } finally {
@@ -439,17 +530,30 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
               paddingBottom: 20 // For ThoughtField
             }
           ]}
+          onEndReached={loadMoreCards}
           onEndReachedThreshold={0.5}
           refreshing={refreshing}
           onRefresh={handleRefresh}
+          ListFooterComponent={loadingMore ? (
+            <View style={{ padding: 20 }}>
+              <Text style={{ color: colors.text, textAlign: 'center' }}>
+                Loading more...
+              </Text>
+            </View>
+          ) : null}
         />
         <Popup
           visible={!!selectedItem}
           item={selectedItem}
-          onClose={() => setSelectedItem(null)}
+          cardLayout={cardLayout}
+          onClose={() => {
+            setSelectedItem(null);
+            setCardLayout(null);
+          }}
           onSaveNote={(note) => {
             console.log('Note saved:', note);
             setSelectedItem(null);
+            setCardLayout(null);
           }}
           onDelete={async () => {
             if (selectedItem?.id) {
@@ -499,17 +603,30 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
             paddingBottom: 20 // For ThoughtField
           }
         ]}
+        onEndReached={loadMoreCards}
         onEndReachedThreshold={0.5}
         refreshing={refreshing}
         onRefresh={handleRefresh}
+        ListFooterComponent={loadingMore ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: colors.text }}>
+              Loading more...
+            </Text>
+          </View>
+        ) : null}
       />
       <Popup
         visible={!!selectedItem}
         item={selectedItem}
-        onClose={() => setSelectedItem(null)}
+        cardLayout={cardLayout}
+        onClose={() => {
+          setSelectedItem(null);
+          setCardLayout(null);
+        }}
         onSaveNote={(note) => {
           console.log('Note saved:', note);
           setSelectedItem(null);
+          setCardLayout(null);
         }}
         onDelete={async () => {
           if (selectedItem?.id) {

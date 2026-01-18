@@ -1,8 +1,10 @@
 import 'react-native-url-polyfill/auto';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, useColorScheme, BackHandler, Alert, AppState, AppStateStatus, SafeAreaView, Platform, NativeModules, Linking } from 'react-native';
+// Gesture handler root required for react-native-gesture-handler
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Session } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import Auth from './components/auth';
 import SearchBar from './components/searchbar';
@@ -14,20 +16,11 @@ import { processSharedContent, sendUrlToBackend } from './services/api';
 import { urlProcessingEmitter } from './services/EventEmitter';
 import { performSmartSearch } from './components/searchbar';
 import { useSettings } from './context/SettingsContext'; // Add this import
+import { preloadAppData } from './services/preloadService';
 
-// Add frame rate configuration
-if (Platform.OS === 'android') {
-  const { UIManager } = require('react-native');
-  try {
-    // Try to set 90fps first
-    if (UIManager.setDisplayRefreshRate) {
-      UIManager.setDisplayRefreshRate(90);
-    }
-  } catch (error) {
-    // If 90fps fails, it will automatically fall back to 60fps
-    console.log('Device does not support 90fps, using default refresh rate');
-  }
-}
+// Note: High refresh rate (90fps/120fps) is handled automatically by Android
+// if the device supports it and the app is running in production mode.
+// Dev mode will always run at 60fps due to debugging overhead.
 
 // Add type for share data
 interface ShareData {
@@ -44,12 +37,24 @@ const App = () => {
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const [supabaseChannel, setSupabaseChannel] = useState<any>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [appIsReady, setAppIsReady] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [preloadedData, setPreloadedData] = useState<any[] | null>(null);
+  const [splashScreenMinTimePassed, setSplashScreenMinTimePassed] = useState(false);
 
   const cardsRef = useRef<{ clearSearch: () => void }>(null);
   const { appTheme } = useSettings(); // Get the theme from our settings context
 
   const handleRefresh = useCallback(() => {
     setReloadKey(prev => prev + 1);
+  }, []);
+
+  // Minimum splash screen duration
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSplashScreenMinTimePassed(true);
+    }, 5000); // 5 seconds minimum
+    return () => clearTimeout(timer);
   }, []);
 
   // 2. Combine session-related effects
@@ -249,7 +254,30 @@ const App = () => {
     return () => subscription.remove();
   }, [session]);
 
-  if (isLoading) {
+  useEffect(() => {
+    async function prepare() {
+      try {
+        // Get user first
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
+
+        if (user) {
+          // Preload data while splash screen is showing
+          const cachedData = await preloadAppData(user.id);
+          setPreloadedData(cachedData);
+        }
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        setAppIsReady(true);
+      }
+    }
+
+    prepare();
+  }, []);
+
+  // Show splash screen while loading or minimum time not passed
+  if (!appIsReady || !splashScreenMinTimePassed) {
     return <SplashScreen />;
   }
 
@@ -257,6 +285,7 @@ const App = () => {
 
   // 6. Wrap main render in SafeAreaView and add error boundaries
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaView style={{ 
       flex: 1, 
       backgroundColor: appTheme.colors.background // Update SafeAreaView to use theme values
@@ -286,6 +315,7 @@ const App = () => {
                   userId={session.user.id}
                   onRefresh={handleRefresh}
                   performSearch={performSmartSearch}
+                  initialData={preloadedData}
                 />
               )}
             </View>
@@ -297,6 +327,7 @@ const App = () => {
         )}
       </View>
     </SafeAreaView>
+    </GestureHandlerRootView>
   );
 };
 
