@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useRef } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Alert, FlatList } from 'react-native';
 import MasonryList from '@react-native-seoul/masonry-list';
 import Popup from './popup';
@@ -41,6 +41,10 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
   const [refreshing, setRefreshing] = useState(false);
   const [imageLoadStatus, setImageLoadStatus] = useState<{ [key: string]: boolean }>({});
   const [localData, setLocalData] = useState<SearchResult[]>([]);
+  
+  // Refs for search cancellation and tracking
+  const searchIdRef = useRef(0);
+  const searchTermRef = useRef(searchTerm);
   
   // Add pagination state
   const [currentPage, setCurrentPage] = useState(0);
@@ -89,7 +93,10 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
         console.log('Using preloaded initial data');
         const sortedData = sortCards(initialData, sortOrder);
         setCardsData(sortedData);
-        setFilteredData(sortedData);
+        // Only set filteredData when there is no active search
+        if (!searchTermRef.current.trim()) {
+          setFilteredData(sortedData);
+        }
         setIsLoading(false);
         return;
       }
@@ -101,7 +108,10 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
       if (cachedData && !forceRefresh) {
         const sortedData = sortCards(cachedData, sortOrder);
         setCardsData(sortedData);
-        setFilteredData(sortedData);
+        // Only set filteredData when there is no active search
+        if (!searchTermRef.current.trim()) {
+          setFilteredData(sortedData);
+        }
         setIsLoading(false);
         return;
       }
@@ -133,7 +143,10 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
       // Apply sorting based on settings
       const sortedData = sortCards(data, sortOrder);
       setCardsData(sortedData);
-      setFilteredData(sortedData);
+      // Only update filteredData if no search is active
+      if (!searchTermRef.current.trim()) {
+        setFilteredData(sortedData);
+      }
     } catch (err) {
       console.error('Error in fetchData:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
@@ -170,7 +183,10 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
         const mergedData = [...cardsData, ...newData];
         const sortedData = sortCards(mergedData, sortOrder);
         setCardsData(sortedData);
-        setFilteredData(sortedData);
+        // Only update filteredData when there is no active search
+        if (!searchTermRef.current.trim()) {
+          setFilteredData(sortedData);
+        }
 
         // Update cache with all data
         await cacheService.setCache(sortedData);
@@ -204,12 +220,20 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     });
   };
 
+  // Keep a ref of the current search term so background fetches can respect it
+  useEffect(() => {
+    searchTermRef.current = searchTerm;
+  }, [searchTerm]);
+
   // Re-sort when sort order changes
   useEffect(() => {
     if (cardsData.length > 0) {
       const sortedData = sortCards(cardsData, sortOrder);
       setCardsData(sortedData);
-      setFilteredData(sortedData);
+      // Only update filteredData if there is no active search (prevents clobbering search results)
+      if (!searchTermRef.current.trim()) {
+        setFilteredData(sortedData);
+      }
     }
   }, [sortOrder]);
 
@@ -218,51 +242,64 @@ const Cards = forwardRef<CardsRef, CardsProps>(({
     fetchData();
   }, [fetchData, refreshKey]);
 
-  // Optimize search effect
+  // Optimize search effect (add cancellation and avoid clobbering by background fetches)
   useEffect(() => {
+    let currentSearchId: number | null = null;
+
     const doSearch = async () => {
       try {
         setIsLoading(true);
 
-        // If search term is empty, show all cards
+        // If search term is empty, show all cards immediately
         if (!searchTerm.trim()) {
           setFilteredData(cardsData);
           return;
         }
 
-        // Try local search first for short queries
+        // Local search for very short queries
         if (searchTerm.length <= 3) {
+          const q = searchTerm.toLowerCase();
           const localResults = cardsData.filter(item => 
-            (item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             item.user_notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             item.tags?.toLowerCase().includes(searchTerm.toLowerCase()))
+            (item.title?.toLowerCase().includes(q) ||
+             item.user_notes?.toLowerCase().includes(q) ||
+             item.tags?.toLowerCase().includes(q))
           );
           setFilteredData(localResults);
           return;
         }
 
-        // For longer queries, use backend search
+        // For longer queries, perform backend search with cancellation id
+        currentSearchId = ++searchIdRef.current;
         const results = await performSearch(searchTerm);
+
+        // If a newer search started, ignore this result (prevents flicker)
+        if (searchIdRef.current !== currentSearchId) return;
+
         if (Array.isArray(results)) {
           setFilteredData(results);
-          // Cache these results
+          // Cache these results locally
           setLocalData(results);
         }
       } catch (error) {
         console.error('Search error:', error);
-        // Fallback to local search on error
+        const q = searchTerm.toLowerCase();
         const localResults = cardsData.filter(item => 
-          (item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           item.user_notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           item.tags?.toLowerCase().includes(searchTerm.toLowerCase()))
+          (item.title?.toLowerCase().includes(q) ||
+           item.user_notes?.toLowerCase().includes(q) ||
+           item.tags?.toLowerCase().includes(q))
         );
         setFilteredData(localResults);
       } finally {
-        setIsLoading(false);
+        // Only clear loading state if this search is still the latest or there was no newer search
+        if (currentSearchId === null || searchIdRef.current === currentSearchId) {
+          setIsLoading(false);
+        }
       }
     };
 
     doSearch();
+
+    // no explicit cancellation is required as we use an incrementing searchIdRef
   }, [searchTerm, cardsData, performSearch]);
 
   // Modify getAspectRatio to consider card density

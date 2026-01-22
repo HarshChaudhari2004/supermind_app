@@ -256,16 +256,18 @@ const Popup: React.FC<PopupProps> = ({
       setIsNotesEditing(false);
       setShowFullSummary(false);
       setShowTags(false);
-    } else if (item?.user_notes) {
-      setNote(item.user_notes);
-      setEditableNote(item.user_notes);
+    } else if (item) {
+      // Ensure we set notes even when they are empty strings (falsy)
+      setNote(item.user_notes ?? '');
+      setEditableNote(item.user_notes ?? '');
     }
   }, [visible, item]);
 
-  // When item changes, update note state
+  // When item changes, update note state (handles empty-string notes too)
   useEffect(() => {
-    if (item?.user_notes) {
-      setNote(item.user_notes);
+    if (item) {
+      setNote(item.user_notes ?? '');
+      setEditableNote(item.user_notes ?? '');
     }
   }, [item]);
 
@@ -670,6 +672,13 @@ const Popup: React.FC<PopupProps> = ({
               </ThemedText>
             </TouchableOpacity>
           </View>
+
+          {/* Note-type content (render notes editor/view when item is a note) */}
+          {item?.video_type === 'note' && (
+            <View style={{ marginTop: 10 }}>
+              {renderNoteContent()}
+            </View>
+          )}
 
           {/* Only show summary and notes sections for non-note content */}
           {item?.video_type !== 'note' && (
