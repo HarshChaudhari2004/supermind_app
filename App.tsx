@@ -17,6 +17,8 @@ import { urlProcessingEmitter } from './services/EventEmitter';
 import { performSmartSearch } from './components/searchbar';
 import { useSettings } from './context/SettingsContext'; // Add this import
 import { preloadAppData } from './services/preloadService';
+import ShareConfirmationOverlay from './components/ShareConfirmationOverlay';
+import { nativeTokenStorage } from './services/nativeTokenStorage'; // Import native token storage
 
 // Note: High refresh rate (90fps/120fps) is handled automatically by Android
 // if the device supports it and the app is running in production mode.
@@ -41,6 +43,7 @@ const App = () => {
   const [user, setUser] = useState<User | null>(null);
   const [preloadedData, setPreloadedData] = useState<any[] | null>(null);
   const [splashScreenMinTimePassed, setSplashScreenMinTimePassed] = useState(false);
+  const [showShareOverlay, setShowShareOverlay] = useState(false);
 
   const cardsRef = useRef<{ clearSearch: () => void }>(null);
   const { appTheme } = useSettings(); // Get the theme from our settings context
@@ -62,9 +65,17 @@ const App = () => {
     const setupAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
+      
+      // Save session to native storage if exists
+      if (session) {
+        await nativeTokenStorage.saveCurrentSession();
+      }
     };
 
     setupAuth();
+
+    // Setup native token storage listener
+    const tokenStorageSubscription = nativeTokenStorage.setupAuthListener();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -72,6 +83,7 @@ const App = () => {
 
     return () => {
       subscription?.unsubscribe();
+      tokenStorageSubscription?.unsubscribe();
     };
   }, []);
 
@@ -162,7 +174,8 @@ const App = () => {
       
       await processSharedContent(content);
       setReloadKey(prev => prev + 1);
-      Alert.alert('Success', 'Content saved successfully');
+      // Show the share confirmation overlay instead of Alert
+      setShowShareOverlay(true);
     } catch (error) {
       console.error('Error processing shared content:', error);
       Alert.alert('Error', 'Failed to process content. Please try again.');
@@ -324,6 +337,13 @@ const App = () => {
               <ThoughtField onRefresh={handleRefresh} />
             )}
           </>
+        )}
+        
+        {/* Share Confirmation Overlay */}
+        {showShareOverlay && (
+          <ShareConfirmationOverlay
+            onComplete={() => setShowShareOverlay(false)}
+          />
         )}
       </View>
     </SafeAreaView>

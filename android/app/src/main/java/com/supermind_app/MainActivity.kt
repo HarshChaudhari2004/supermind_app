@@ -25,24 +25,11 @@ class MainActivity : ReactActivity() {
   }
 
   private fun handleIntent(intent: Intent?) {
-    intent?.let {
-      if (Intent.ACTION_SEND == it.action && "text/plain" == it.type) {
-        val sharedText = it.getStringExtra(Intent.EXTRA_TEXT)
-        if (sharedText != null) {
-          // Start the service to handle the URL in background
-          val serviceIntent = Intent(this, UrlProcessingService::class.java).apply {
-            action = Intent.ACTION_SEND
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, sharedText)
-          }
-          startService(serviceIntent)
-          // Minimize the app
-          moveTaskToBack(true)
-        }
-      }
-    }
+    // External shares are handled by ShareActivity (transparent share extension).
+    // Keep this method no-op to avoid duplicate handling. If in future you want
+    // to handle shares when launching the main activity explicitly, implement
+    // a guarded flow here.
   }
-
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
    * rendering of the component.

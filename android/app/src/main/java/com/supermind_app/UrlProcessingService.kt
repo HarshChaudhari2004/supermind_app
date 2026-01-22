@@ -1,6 +1,8 @@
 package com.supermind_app
 
+import android.app.ActivityManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.Handler
@@ -38,12 +40,25 @@ class UrlProcessingService : Service() {
     }
 
     private fun showToast(message: String) {
-        mainHandler.post {
-            Toast.makeText(
-                applicationContext, 
-                message,
-                Toast.LENGTH_SHORT
-            ).show()
+        // Only show toast if app is NOT in foreground
+        // If app is in foreground, React Native overlay will handle it
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val appProcesses = activityManager.runningAppProcesses
+        
+        val isAppInForeground = appProcesses?.any { 
+            it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND &&
+            it.processName == packageName
+        } ?: false
+        
+        // Only show toast for background processing
+        if (!isAppInForeground) {
+            mainHandler.post {
+                Toast.makeText(
+                    applicationContext, 
+                    message,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 

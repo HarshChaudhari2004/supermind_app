@@ -16,6 +16,7 @@
     "@rneui/themed": "^4.0.0-rc.8",
     "@supabase/supabase-js": "^2.48.1",
     "@types/react-native-share-menu": "^5.0.2",
+    "lottie-react-native": "^7.3.5",
     "react": "18.3.1",
     "react-native": "0.77.0",
     "react-native-gesture-handler": "^2.25.0",

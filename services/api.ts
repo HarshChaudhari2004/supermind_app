@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 const POSSIBLE_BASE_URLS = __DEV__ 
   ? [
       'http://localhost:8000',        // ADB reverse first (most reliable)
-      'http://192.168.0.111:8000',    // WiFi IP fallback
+      'http://192.168.0.104:8000',    // WiFi IP fallback
       'http://10.0.2.2:8000',         // Android emulator fallback
       'http://0.0.0.0:8000'           // Direct bind address
     ]

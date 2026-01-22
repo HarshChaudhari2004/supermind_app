@@ -30,15 +30,25 @@
         android:theme="@style/AppTheme"
         android:networkSecurityConfig="@xml/network_security_config">
         
-        <!-- Add the Service -->
-        <service
-            android:name=".UrlProcessingService"
+        <!-- Share Extension Activity - Transparent overlay for share animations -->
+        <activity
+            android:name=".ShareActivity"
+            android:theme="@style/Theme.ShareOverlay"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+        </activity>
+        
+        <!-- Add the Service (kept for background processing fallback) -->
+        <service
+            android:name=".UrlProcessingService"
+            android:exported="false">
         </service>
 
         <!-- Main Activity -->
@@ -52,11 +62,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
